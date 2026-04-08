@@ -1,0 +1,9 @@
+services:
+  humanizar-units:
+    image: humanizar-units
+    container_name: humanizar-units
+    ports:
+      - "127.0.0.1:9095:9095"
+    env_file:
+      - .env.docker
+    restart: unless-stopped

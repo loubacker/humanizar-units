@@ -1,0 +1,15 @@
+[
+  {
+    "name": "java.util.UUID[]",
+    "unsafeAllocated": true
+  },
+  {
+    "name": "java.util.concurrent.ExecutorService",
+    "methods": [
+      {
+        "name": "shutdown",
+        "parameterTypes": []
+      }
+    ]
+  }
+]
