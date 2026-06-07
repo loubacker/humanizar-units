@@ -9,13 +9,10 @@ import org.hibernate.annotations.UpdateTimestamp;
 
 import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
-import jakarta.persistence.FetchType;
 import jakarta.persistence.GeneratedValue;
 import jakarta.persistence.GenerationType;
 import jakarta.persistence.Id;
 import jakarta.persistence.Index;
-import jakarta.persistence.JoinColumn;
-import jakarta.persistence.ManyToOne;
 import jakarta.persistence.Table;
 import jakarta.persistence.UniqueConstraint;
 
@@ -33,10 +30,6 @@ public class Units {
 
     @Column(name = "tenant_id", nullable = false)
     private UUID municipioId;
-
-    @ManyToOne(fetch = FetchType.LAZY)
-    @JoinColumn(name = "tenant_id", insertable = false, updatable = false)
-    private Municipio municipio;
 
     @Column(name = "unit_name", nullable = false)
     private String unitName;
@@ -109,10 +102,6 @@ public class Units {
 
     public void setMunicipioId(UUID municipioId) {
         this.municipioId = municipioId;
-    }
-
-    public Municipio getMunicipio() {
-        return municipio;
     }
 
     public String getUnitName() {
