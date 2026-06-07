@@ -3,6 +3,10 @@ package com.humanizar.units.model.enums;
 public enum ReasonCode {
 
     UNIT_NOT_FOUND(404, "Unidade não encontrada.", false),
+    MUNICIPIO_NOT_FOUND(404, "Município não encontrado.", false),
+    MUNICIPIO_DUPLICATED(409, "Município já cadastrado.", false),
+    MUNICIPIO_HAS_UNITS(409, "Município possui unidades vinculadas.", false),
+    TENANT_MISSING(400, "Tenant (município) não identificado na requisição.", false),
     VALIDATION_ERROR(400, "Falha de validação da solicitação.", false),
     AUTHENTICATION_FAILURE(401, "Falha de autenticação: credenciais ausentes ou inválidas.", false),
     AUTHORIZATION_FAILURE(403, "Falha de autorização: acesso negado para este recurso.", false),

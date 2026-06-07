@@ -12,6 +12,7 @@ import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
 
 import com.humanizar.units.controller.dto.UnitErrorResponseDTO;
+import com.humanizar.units.exception.Throwables;
 import com.humanizar.units.exception.UnitException;
 import com.humanizar.units.model.enums.ReasonCode;
 
@@ -100,7 +101,7 @@ public class UnitExceptionHandler {
             String path,
             Throwable exception) {
         String logMessage = "Erro no processamento HTTP. reasonCode={}, status={}, path={}, causa={}";
-        String rootCauseMessage = rootCauseMessage(exception);
+        String rootCauseMessage = Throwables.rootCauseMessage(exception);
 
         if (status >= 500) {
             log.error(logMessage, reasonCode, status, path, rootCauseMessage, exception);
@@ -108,13 +109,5 @@ public class UnitExceptionHandler {
         }
 
         log.warn(logMessage, reasonCode, status, path, rootCauseMessage);
-    }
-
-    private String rootCauseMessage(Throwable throwable) {
-        Throwable current = throwable;
-        while (current != null && current.getCause() != null && current.getCause() != current) {
-            current = current.getCause();
-        }
-        return current != null ? current.getMessage() : null;
     }
 }

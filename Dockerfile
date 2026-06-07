@@ -17,8 +17,12 @@ RUN ./mvnw -Pnative -DskipTests dependency:go-offline
 # Copia o Código-Fonte para o Container
 COPY src ./src
 
+# Args de build
+ARG AUTH_SERVER_URL
+
 # Compila a Aplicação para um Binário Nativo
-RUN ./mvnw -Pnative -DskipTests native:compile
+RUN AUTH_SERVER_URL="${AUTH_SERVER_URL}" \
+    ./mvnw -Pnative -DskipTests native:compile
 
 # -- Stage Runtime (Debian Slim) --
 FROM debian:bookworm-slim

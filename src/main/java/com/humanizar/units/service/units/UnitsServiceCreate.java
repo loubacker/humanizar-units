@@ -1,11 +1,13 @@
-package com.humanizar.units.service;
+package com.humanizar.units.service.units;
 
-import com.humanizar.units.repository.UnitsRepository;
+import java.util.UUID;
+
 import org.springframework.stereotype.Service;
 
 import com.humanizar.units.dto.UnitDTO;
 import com.humanizar.units.mapper.UnitMapper;
 import com.humanizar.units.model.Units;
+import com.humanizar.units.repository.UnitsRepository;
 
 @Service
 public class UnitsServiceCreate {
@@ -18,8 +20,8 @@ public class UnitsServiceCreate {
         this.unitMapper = unitMapper;
     }
 
-    public UnitDTO criarUnit(UnitDTO unitDTO) {
-        Units unit = unitMapper.toEntity(unitDTO);
+    public UnitDTO criarUnit(UUID municipioId, UnitDTO unitDTO) {
+        Units unit = unitMapper.toEntity(municipioId, unitDTO);
         Units unitSalvo = unitsRepository.save(unit);
         return unitMapper.toDTO(unitSalvo);
     }

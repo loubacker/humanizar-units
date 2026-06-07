@@ -1,17 +1,17 @@
-package com.humanizar.units.service;
+package com.humanizar.units.service.units;
 
 import java.util.UUID;
 
-import com.humanizar.units.repository.UnitsRepository;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
 
 import com.humanizar.units.dto.UnitDTO;
-import com.humanizar.units.exception.UnitException;
 import com.humanizar.units.mapper.UnitMapper;
 import com.humanizar.units.model.Units;
-import com.humanizar.units.model.enums.ReasonCode;
+import com.humanizar.units.repository.UnitsRepository;
 
 @Service
+@Transactional
 public class UnitsServiceUpdate {
 
     private final UnitsRepository unitsRepository;
@@ -22,11 +22,8 @@ public class UnitsServiceUpdate {
         this.unitMapper = unitMapper;
     }
 
-    public UnitDTO atualizarUnit(UUID unitId, UnitDTO unitDTO) {
-        Units unit = unitsRepository.findById(unitId)
-                .orElseThrow(() -> new UnitException(
-                        ReasonCode.UNIT_NOT_FOUND,
-                        "Unidade nao encontrada para o unitId informado."));
+    public UnitDTO atualizarUnit(UUID municipioId, UUID unitId, UnitDTO unitDTO) {
+        Units unit = unitsRepository.obterObrigatorio(municipioId, unitId);
 
         unitMapper.applyUpdates(unit, unitDTO);
 

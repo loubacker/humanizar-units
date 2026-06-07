@@ -10,47 +10,92 @@
 
 <br/>
 
-Serviço REST síncrono responsável pelo CRUD de unidades da clínica Humanizar. Protegido por OAuth2 JWT com controle de acesso baseado em roles (RBAC), persistência via JPA/Hibernate e opção de runtime em binário nativo (GraalVM Native Image).
+Serviço REST síncrono responsável pelo CRUD de unidades da clínica Humanizar, organizado por município em modelo **multi-tenant** (município = tenant). Protegido por OAuth2 JWT com controle de acesso baseado em roles (RBAC), persistência via JPA/Hibernate e opção de runtime em binário nativo (GraalVM Native Image).
 
 ## Arquitetura e Padrões
 
 - Arquitetura MVC (`controller`, `service`, `repository`, `model`).
+- Multi-tenancy por coluna discriminadora `tenant_id` em `units`, com `municipioId` informado **explicitamente** nas rotas (sem `@TenantId` e sem resolução automática por claim de JWT).
 - DTOs imutáveis com Java Records para contratos de entrada e saída.
-- Mapper centralizado com validação de campos obrigatórios (`UnitMapper`).
+- Mappers manuais com validação de campos obrigatórios (`UnitMapper`, `MunicipioMapper`).
 - Exception handler global com respostas padronizadas (`UnitExceptionHandler`).
 - Controle de acesso por role via `@PreAuthorize` (RBAC).
-- Retry automático em falhas transientes de banco (`@Retry`).
+- Retry automático em falhas transientes de banco nos endpoints GET (`@Retry`).
 - Execução otimizada com Virtual Threads e opção de runtime em binário nativo (GraalVM Native Image).
+
+## Multi-tenancy (município = tenant)
+
+- Cada **município** é um tenant; um município registra **N unidades** (1:N).
+- Isolamento por coluna discriminadora `tenant_id` em `units` (mapeada do campo `municipioId` da entidade `Units`).
+- O `municipioId` é informado **explicitamente** como path variable em todas as rotas de unidades (`/api/v1/municipio/{municipioId}/units/...`).
+- `Municipio` é dado mestre **global** (não escopado por tenant); `codigo_ibge` é a chave natural única.
+- CNPJ é único por tenant (`uk_units_tenant_cnpj` em `tenant_id` + `cnpj`); leituras por tenant são indexadas (`idx_units_tenant`).
+- A rota `GET /api/v1/units?ids=...` é a exceção **cross-tenant**: resolve unidades por id sem exigir município (ver Interfaces).
 
 ## Interfaces internas protegidas (REST)
 
 Base path: `/api/v1`
 
-- `POST /unit/register`
-    - Cria uma nova unidade.
-    - Body obrigatório: `UnitDTO`.
-    - Autorização: `ROLE_ADMINISTRADOR`.
-    - Response: `201 Created` com `UnitDTO`.
-- `GET /units`
-    - Lista todas as unidades cadastradas.
+### Unidades (escopadas por município)
+
+- `GET /municipio/{municipioId}/units`
+    - Lista as unidades do município.
     - Autorização: qualquer usuário autenticado.
     - Retry automático em falhas transientes de banco (`@Retry`, max 2, timeout 30s).
     - Response: `200 OK` com `List<UnitDTO>`.
-- `PUT /unit/update/{unitId}`
-    - Atualiza uma unidade existente.
+- `POST /municipio/{municipioId}/units/register`
+    - Cria uma nova unidade no município.
     - Body obrigatório: `UnitDTO`.
-    - Path variable: `unitId` (UUID).
+    - Autorização: `ROLE_ADMINISTRADOR`.
+    - Response: `201 Created` com `UnitDTO`.
+- `PUT /municipio/{municipioId}/units/update/{unitId}`
+    - Atualiza uma unidade existente do município.
+    - Body obrigatório: `UnitDTO`. Path variables: `municipioId`, `unitId` (UUID).
     - Autorização: `ROLE_ADMINISTRADOR`.
     - Response: `200 OK` com `UnitDTO`.
-- `DELETE /unit/delete/{unitId}`
-    - Remove uma unidade existente.
-    - Path variable: `unitId` (UUID).
+- `DELETE /municipio/{municipioId}/units/delete/{unitId}`
+    - Remove uma unidade existente do município.
+    - Path variables: `municipioId`, `unitId` (UUID).
     - Autorização: `ROLE_ADMINISTRADOR`.
     - Response: `200 OK`.
 
+### Unidades por id (lookup cross-tenant)
+
+- `GET /units?ids={uuid1},{uuid2},...`
+    - Resolve unidades por lista de ids, **sem** exigir município.
+    - Usado por consumidores que armazenam apenas `unitId` (ex.: cadastro de paciente).
+    - Autorização: qualquer usuário autenticado. Retry transiente (`@Retry`).
+    - Response: `200 OK` com `List<UnitDTO>` (lista vazia quando `ids` ausente ou vazio).
+
+### Municípios
+
+- `GET /municipio`
+    - Lista os municípios cadastrados.
+    - Autorização: qualquer usuário autenticado.
+    - Response: `200 OK` com `List<MunicipioDTO>`.
+- `GET /municipio/{municipioId}`
+    - Obtém um município por id.
+    - Autorização: qualquer usuário autenticado.
+    - Response: `200 OK` com `MunicipioDTO`.
+- `POST /municipio/register`
+    - Cadastra um novo município (tenant).
+    - Body obrigatório: `MunicipioDTO` (`codigoIbge`, `nome`, `uf`).
+    - Autorização: `ROLE_ADMINISTRADOR`.
+    - Response: `201 Created` com `MunicipioDTO`.
+- `PUT /municipio/update/{municipioId}`
+    - Atualiza um município.
+    - Autorização: `ROLE_ADMINISTRADOR`.
+    - Response: `200 OK` com `MunicipioDTO`.
+- `DELETE /municipio/delete/{municipioId}`
+    - Remove um município sem unidades vinculadas.
+    - Autorização: `ROLE_ADMINISTRADOR`.
+    - Response: `200 OK` (ou `409 MUNICIPIO_HAS_UNITS` se houver unidades vinculadas).
+
+> Leitura requer apenas autenticação; escrita exige `ROLE_ADMINISTRADOR`.
+
 ## ⛓️‍💥 Resiliência e Tolerância a Falhas
 
-### Retry transiente (endpoint GET)
+### Retry transiente (endpoints GET)
 
 `@Retry` via `ResilientMethodsConfig` (Spring Framework 7 `@Retryable`).
 
@@ -69,6 +114,10 @@ Base path: `/api/v1`
 
 Códigos de erro mapeados (`ReasonCode`):
 - `UNIT_NOT_FOUND` (404) — não retentável.
+- `MUNICIPIO_NOT_FOUND` (404) — não retentável.
+- `MUNICIPIO_DUPLICATED` (409) — não retentável.
+- `MUNICIPIO_HAS_UNITS` (409) — não retentável.
+- `TENANT_MISSING` (400) — não retentável.
 - `VALIDATION_ERROR` (400) — não retentável.
 - `AUTHENTICATION_FAILURE` (401) — não retentável.
 - `AUTHORIZATION_FAILURE` (403) — não retentável.
@@ -77,26 +126,31 @@ Códigos de erro mapeados (`ReasonCode`):
 ## 🔐 Segurança
 
 - API interna protegida por OAuth2 Resource Server JWT.
-- JWK configurado por `AUTH_SERVER_URL`.
+- JWK configurado por `AUTH_SERVER_URL` (`${AUTH_SERVER_URL}/oauth2/jwks`).
 - RBAC: operações de escrita requerem `ROLE_ADMINISTRADOR`; leitura requer apenas autenticação.
 - CORS restrito a origens localhost.
 - Sessão stateless (sem estado no servidor).
-- Sem exposição de endpoint público para uso externo.
+- Único endpoint público: `/actuator/health`.
 
 ## Estrutura do Projeto
 
 ```text
 src/main/java/com/humanizar/units/
 |-- config/                        # CorsConfig, SecurityConfig, ObjectMapperConfig, ResilientMethodsConfig
-|-- controller/                    # controllers CRUD (Create, Retrieve, Update, Delete)
+|-- controller/
 |   |-- dto/                       # UnitErrorResponseDTO
-|   `-- handler/                   # UnitExceptionHandler
-|-- dto/                           # UnitDTO (Java Record)
-|-- exception/                     # UnitException
-|-- mapper/                        # UnitMapper (validação e conversão)
-|-- model/                         # entidade Units + enums (ReasonCode)
-|-- repository/                    # UnitsRepository (JPA)
-`-- service/                       # services CRUD (Create, Retrieve, Update, Delete)
+|   |-- handler/                   # UnitExceptionHandler
+|   |-- municipio/                 # MunicipioController{Create,Retrieve,Update,Delete}
+|   `-- units/                     # UnitsController{Create,Retrieve,BatchRetrieve,Update,Delete}
+|-- dto/                           # UnitDTO, MunicipioDTO (Java Records)
+|-- exception/                     # UnitException, Throwables (utilitario de causa)
+|-- mapper/                        # UnitMapper, MunicipioMapper (validação e conversão)
+|-- model/                         # entidades Units, Municipio
+|   `-- enums/                     # ReasonCode
+|-- repository/                    # UnitsRepository, MunicipioRepository (JPA)
+`-- service/
+    |-- municipio/                 # MunicipioService{Create,Retrieve,Update,Delete}
+    `-- units/                     # UnitsService{Create,Retrieve,Update,Delete}
 ```
 
 ## Como executar localmente

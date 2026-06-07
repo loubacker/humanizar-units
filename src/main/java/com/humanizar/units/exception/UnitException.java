@@ -41,6 +41,6 @@ public class UnitException extends RuntimeException {
         if (reasonCode != null) {
             return reasonCode.getMessage();
         }
-        return null;
+        return "";
     }
 }

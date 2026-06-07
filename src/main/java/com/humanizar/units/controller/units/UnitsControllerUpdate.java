@@ -1,4 +1,4 @@
-package com.humanizar.units.controller;
+package com.humanizar.units.controller.units;
 
 import java.util.UUID;
 
@@ -14,10 +14,10 @@ import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 
 import com.humanizar.units.dto.UnitDTO;
-import com.humanizar.units.service.UnitsServiceUpdate;
+import com.humanizar.units.service.units.UnitsServiceUpdate;
 
 @RestController
-@RequestMapping("/api/v1")
+@RequestMapping("/api/v1/municipio/{municipioId}/units")
 public class UnitsControllerUpdate {
 
     private static final Logger log = LoggerFactory.getLogger(UnitsControllerUpdate.class);
@@ -28,13 +28,12 @@ public class UnitsControllerUpdate {
         this.unitsServiceUpdate = unitsServiceUpdate;
     }
 
-    @PutMapping("/unit/update/{unitId}")
+    @PutMapping("/update/{unitId}")
     @PreAuthorize("hasRole('ADMINISTRADOR')")
-    public ResponseEntity<UnitDTO> atualizarUnit(@PathVariable UUID unitId,
+    public ResponseEntity<UnitDTO> atualizarUnit(@PathVariable UUID municipioId, @PathVariable UUID unitId,
             @RequestBody UnitDTO unitDTO) {
-        log.info("Recebido PUT /api/v1/unit/update/{}. operacao=UPDATE", unitId);
-        UnitDTO atualizado = unitsServiceUpdate.atualizarUnit(unitId, unitDTO);
-        log.info("PUT /api/v1/unit/update/{} concluido com sucesso.", unitId);
+        log.info("Recebido PUT /api/v1/municipio/{}/units/update/{}. operacao=UPDATE", municipioId, unitId);
+        UnitDTO atualizado = unitsServiceUpdate.atualizarUnit(municipioId, unitId, unitDTO);
         return ResponseEntity.status(HttpStatus.OK).body(atualizado);
     }
 }

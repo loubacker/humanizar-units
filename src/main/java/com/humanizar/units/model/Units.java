@@ -9,18 +9,34 @@ import org.hibernate.annotations.UpdateTimestamp;
 
 import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
+import jakarta.persistence.FetchType;
 import jakarta.persistence.GeneratedValue;
 import jakarta.persistence.GenerationType;
 import jakarta.persistence.Id;
+import jakarta.persistence.Index;
+import jakarta.persistence.JoinColumn;
+import jakarta.persistence.ManyToOne;
 import jakarta.persistence.Table;
+import jakarta.persistence.UniqueConstraint;
 
 @Entity
-@Table(name = "units")
+@Table(name = "units", uniqueConstraints = {
+        @UniqueConstraint(name = "uk_units_tenant_cnpj", columnNames = { "tenant_id", "cnpj" })
+}, indexes = {
+        @Index(name = "idx_units_tenant", columnList = "tenant_id")
+})
 public class Units {
 
     @Id
     @GeneratedValue(strategy = GenerationType.UUID)
     private UUID id;
+
+    @Column(name = "tenant_id", nullable = false)
+    private UUID municipioId;
+
+    @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "tenant_id", insertable = false, updatable = false)
+    private Municipio municipio;
 
     @Column(name = "unit_name", nullable = false)
     private String unitName;
@@ -40,12 +56,6 @@ public class Units {
     @Column(name = "bairro", nullable = false)
     private String bairro;
 
-    @Column(name = "cidade", nullable = false)
-    private String cidade;
-
-    @Column(name = "estado", nullable = false)
-    private String estado;
-
     @Column(name = "cep", nullable = false)
     private String cep;
 
@@ -63,18 +73,17 @@ public class Units {
     public Units() {
     }
 
-    public Units(UUID id, String unitName, String razaoSocial, String endereco, String numero, String complemento,
-            String bairro, String cidade, String estado, String cep, String cnpj, LocalDateTime createdAt,
+    public Units(UUID id, UUID municipioId, String unitName, String razaoSocial, String endereco, String numero,
+            String complemento, String bairro, String cep, String cnpj, LocalDateTime createdAt,
             LocalDateTime updatedAt) {
         this.id = id;
+        this.municipioId = municipioId;
         this.unitName = unitName;
         this.razaoSocial = razaoSocial;
         this.endereco = endereco;
         this.numero = numero;
         this.complemento = complemento;
         this.bairro = bairro;
-        this.cidade = cidade;
-        this.estado = estado;
         this.cep = cep;
         this.cnpj = cnpj;
         this.createdAt = createdAt;
@@ -82,9 +91,8 @@ public class Units {
     }
 
     public Units(String unitName, String razaoSocial, String endereco, String numero, String complemento,
-            String bairro, String cidade, String estado, String cep, String cnpj) {
-        this(null, unitName, razaoSocial, endereco, numero, complemento, bairro, cidade, estado, cep, cnpj, null,
-                null);
+            String bairro, String cep, String cnpj) {
+        this(null, null, unitName, razaoSocial, endereco, numero, complemento, bairro, cep, cnpj, null, null);
     }
 
     public UUID getId() {
@@ -93,6 +101,18 @@ public class Units {
 
     public void setId(UUID id) {
         this.id = id;
+    }
+
+    public UUID getMunicipioId() {
+        return municipioId;
+    }
+
+    public void setMunicipioId(UUID municipioId) {
+        this.municipioId = municipioId;
+    }
+
+    public Municipio getMunicipio() {
+        return municipio;
     }
 
     public String getUnitName() {
@@ -143,22 +163,6 @@ public class Units {
         this.bairro = bairro;
     }
 
-    public String getCidade() {
-        return cidade;
-    }
-
-    public void setCidade(String cidade) {
-        this.cidade = cidade;
-    }
-
-    public String getEstado() {
-        return estado;
-    }
-
-    public void setEstado(String estado) {
-        this.estado = estado;
-    }
-
     public String getCep() {
         return cep;
     }
@@ -192,33 +196,20 @@ public class Units {
     }
 
     @Override
-    public boolean equals(Object o) {
-        if (this == o) {
+    public boolean equals(Object other) {
+        if (this == other) {
             return true;
         }
-        if (o == null || getClass() != o.getClass()) {
+        if (other == null || getClass() != other.getClass()) {
             return false;
         }
-        Units units = (Units) o;
-        return Objects.equals(id, units.id) &&
-                Objects.equals(unitName, units.unitName) &&
-                Objects.equals(razaoSocial, units.razaoSocial) &&
-                Objects.equals(endereco, units.endereco) &&
-                Objects.equals(numero, units.numero) &&
-                Objects.equals(complemento, units.complemento) &&
-                Objects.equals(bairro, units.bairro) &&
-                Objects.equals(cidade, units.cidade) &&
-                Objects.equals(estado, units.estado) &&
-                Objects.equals(cep, units.cep) &&
-                Objects.equals(cnpj, units.cnpj) &&
-                Objects.equals(createdAt, units.createdAt) &&
-                Objects.equals(updatedAt, units.updatedAt);
+        Units units = (Units) other;
+        return Objects.equals(id, units.id);
     }
 
     @Override
     public int hashCode() {
-        return Objects.hash(id, unitName, razaoSocial, endereco, numero, complemento, bairro, cidade, estado, cep,
-                cnpj, createdAt, updatedAt);
+        return Objects.hash(id);
     }
 
     public static Builder builder() {
@@ -227,14 +218,13 @@ public class Units {
 
     public static class Builder {
         private UUID id;
+        private UUID municipioId;
         private String unitName;
         private String razaoSocial;
         private String endereco;
         private String numero;
         private String complemento;
         private String bairro;
-        private String cidade;
-        private String estado;
         private String cep;
         private String cnpj;
         private LocalDateTime createdAt;
@@ -242,6 +232,11 @@ public class Units {
 
         public Builder id(UUID id) {
             this.id = id;
+            return this;
+        }
+
+        public Builder municipioId(UUID municipioId) {
+            this.municipioId = municipioId;
             return this;
         }
 
@@ -275,16 +270,6 @@ public class Units {
             return this;
         }
 
-        public Builder cidade(String cidade) {
-            this.cidade = cidade;
-            return this;
-        }
-
-        public Builder estado(String estado) {
-            this.estado = estado;
-            return this;
-        }
-
         public Builder cep(String cep) {
             this.cep = cep;
             return this;
@@ -306,7 +291,7 @@ public class Units {
         }
 
         public Units build() {
-            return new Units(id, unitName, razaoSocial, endereco, numero, complemento, bairro, cidade, estado, cep,
+            return new Units(id, municipioId, unitName, razaoSocial, endereco, numero, complemento, bairro, cep,
                     cnpj, createdAt, updatedAt);
         }
     }
@@ -314,14 +299,13 @@ public class Units {
     @Override
     public String toString() {
         return "Units [id=" + id +
+                ", municipioId=" + municipioId +
                 ", unitName=" + unitName +
                 ", razaoSocial=" + razaoSocial +
                 ", endereco=" + endereco +
                 ", numero=" + numero +
                 ", complemento=" + complemento +
                 ", bairro=" + bairro +
-                ", cidade=" + cidade +
-                ", estado=" + estado +
                 ", cep=" + cep +
                 ", cnpj=" + cnpj +
                 ", createdAt=" + createdAt +

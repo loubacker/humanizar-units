@@ -18,6 +18,8 @@ import org.springframework.resilience.annotation.Retryable;
 import org.springframework.resilience.retry.MethodRetryPredicate;
 import org.springframework.transaction.CannotCreateTransactionException;
 
+import com.humanizar.units.exception.Throwables;
+
 import jakarta.persistence.QueryTimeoutException;
 
 @Configuration
@@ -38,17 +40,12 @@ public class ResilientMethodsConfig {
 
         @Override
         public boolean shouldRetry(Method method, Throwable throwable) {
-            Throwable current = throwable;
-            while (current != null) {
-                if (current instanceof TransientDataAccessException
-                        || current instanceof RecoverableDataAccessException
-                        || current instanceof CannotCreateTransactionException
-                        || current instanceof QueryTimeoutException) {
-                    return true;
-                }
-                current = current.getCause();
-            }
-            return false;
+            return Throwables.hasCause(
+                    throwable,
+                    TransientDataAccessException.class,
+                    RecoverableDataAccessException.class,
+                    CannotCreateTransactionException.class,
+                    QueryTimeoutException.class);
         }
     }
 

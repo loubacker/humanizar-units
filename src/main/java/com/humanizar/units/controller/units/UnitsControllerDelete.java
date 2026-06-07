@@ -1,4 +1,4 @@
-package com.humanizar.units.controller;
+package com.humanizar.units.controller.units;
 
 import java.util.UUID;
 
@@ -11,10 +11,10 @@ import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 
-import com.humanizar.units.service.UnitsServiceDelete;
+import com.humanizar.units.service.units.UnitsServiceDelete;
 
 @RestController
-@RequestMapping("api/v1")
+@RequestMapping("/api/v1/municipio/{municipioId}/units")
 public class UnitsControllerDelete {
 
     private static final Logger log = LoggerFactory.getLogger(UnitsControllerDelete.class);
@@ -25,12 +25,11 @@ public class UnitsControllerDelete {
         this.unitsServiceDelete = unitsServiceDelete;
     }
 
-    @DeleteMapping("/unit/delete/{unitId}")
+    @DeleteMapping("/delete/{unitId}")
     @PreAuthorize("hasRole('ADMINISTRADOR')")
-    public ResponseEntity<String> deletarUnit(@PathVariable UUID unitId) {
-        log.info("Recebido DELETE /api/v1/unit/delete/{}. operacao=DELETE", unitId);
-        unitsServiceDelete.deletarUnit(unitId);
-        log.info("DELETE /api/v1/unit/delete/{} concluido com sucesso.", unitId);
+    public ResponseEntity<String> deletarUnit(@PathVariable UUID municipioId, @PathVariable UUID unitId) {
+        log.info("Recebido DELETE /api/v1/municipio/{}/units/delete/{}. operacao=DELETE", municipioId, unitId);
+        unitsServiceDelete.deletarUnit(municipioId, unitId);
         return ResponseEntity.ok("Unidade excluida com sucesso.");
     }
 }

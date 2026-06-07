@@ -12,6 +12,7 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.SerializationFeature;
 import com.fasterxml.jackson.datatype.jsr310.JavaTimeModule;
 import com.humanizar.units.controller.dto.UnitErrorResponseDTO;
+import com.humanizar.units.dto.MunicipioDTO;
 import com.humanizar.units.dto.UnitDTO;
 
 @Configuration
@@ -32,6 +33,7 @@ public class ObjectMapperConfig {
         @Override
         public void registerHints(RuntimeHints hints, ClassLoader classLoader) {
             registerJsonBinding(hints, UnitDTO.class);
+            registerJsonBinding(hints, MunicipioDTO.class);
             registerJsonBinding(hints, UnitErrorResponseDTO.class);
         }
 

@@ -1,18 +1,17 @@
-package com.humanizar.units.service;
+package com.humanizar.units.service.units;
 
 import java.util.List;
+import java.util.UUID;
 
-import com.humanizar.units.repository.UnitsRepository;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import com.humanizar.units.dto.UnitDTO;
-import com.humanizar.units.exception.UnitException;
 import com.humanizar.units.mapper.UnitMapper;
-import com.humanizar.units.model.enums.ReasonCode;
+import com.humanizar.units.repository.UnitsRepository;
 
 @Service
-@Transactional
+@Transactional(readOnly = true)
 public class UnitsServiceRetrieve {
 
     private final UnitsRepository unitsRepository;
@@ -23,16 +22,21 @@ public class UnitsServiceRetrieve {
         this.unitMapper = unitMapper;
     }
 
-    public List<UnitDTO> listarUnits() {
-        List<UnitDTO> units = unitsRepository.findAll()
+    public List<UnitDTO> listarUnits(UUID municipioId) {
+        return unitsRepository.findByMunicipioId(municipioId)
                 .stream()
                 .map(unitMapper::toDTO)
                 .toList();
+    }
 
-        if (units.isEmpty()) {
-            throw new UnitException(ReasonCode.UNIT_NOT_FOUND, "Nenhuma unidade cadastrada.");
+    public List<UnitDTO> obterPorIds(List<UUID> ids) {
+        if (ids == null || ids.isEmpty()) {
+            return List.of();
         }
 
-        return units;
+        return unitsRepository.findByIdIn(ids)
+                .stream()
+                .map(unitMapper::toDTO)
+                .toList();
     }
 }
