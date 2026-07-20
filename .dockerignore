@@ -1,0 +1,9 @@
+target
+tests
+.env
+.env.*
+.git
+.idea
+Dockerfile*
+docker-compose*.yml
+docker-compose*.yaml
