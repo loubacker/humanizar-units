@@ -18,9 +18,9 @@ import jakarta.persistence.UniqueConstraint;
 
 @Entity
 @Table(name = "units", uniqueConstraints = {
-        @UniqueConstraint(name = "uk_units_tenant_cnpj", columnNames = { "tenant_id", "cnpj" })
+        @UniqueConstraint(name = "uk_units_municipio_cnpj", columnNames = { "municipio_id", "cnpj" })
 }, indexes = {
-        @Index(name = "idx_units_tenant", columnList = "tenant_id")
+        @Index(name = "idx_units_municipio", columnList = "municipio_id")
 })
 public class Units {
 
@@ -28,7 +28,7 @@ public class Units {
     @GeneratedValue(strategy = GenerationType.UUID)
     private UUID id;
 
-    @Column(name = "tenant_id", nullable = false)
+    @Column(name = "municipio_id", nullable = false)
     private UUID municipioId;
 
     @Column(name = "unit_name", nullable = false)
