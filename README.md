@@ -1,196 +1,203 @@
 <div align="center">
   <h1>Humanizar - Units (Microservice)</h1>
-  <p>Gestão das unidades da clínica no ecossistema Humanizar.</p>
+  <p>Gestão de municípios e unidades da clínica Humanizar em Rust, com API interna protegida e persistência PostgreSQL assíncrona.</p>
 
-  <img alt="Java" src="https://img.shields.io/badge/Java-25-ED8B00?style=for-the-badge&logo=openjdk&logoColor=white" />
-  <img alt="Spring Boot" src="https://img.shields.io/badge/Spring_Boot-4.0.5-6DB33F?style=for-the-badge&logo=spring-boot&logoColor=white" />
-  <img alt="GraalVM" src="https://img.shields.io/badge/GraalVM_Native-25-E76F00?style=for-the-badge&logo=oracle&logoColor=white" />
+  <img alt="Rust" src="https://img.shields.io/badge/Rust-1.97-000000?style=for-the-badge&logo=rust&logoColor=white" />
+  <img alt="Axum" src="https://img.shields.io/badge/Axum-0.8-7B1FA2?style=for-the-badge&logo=rust&logoColor=white" />
+  <img alt="Tokio" src="https://img.shields.io/badge/Tokio-1.53-2C5BB4?style=for-the-badge&logo=rust&logoColor=white" />
   <img alt="PostgreSQL" src="https://img.shields.io/badge/PostgreSQL-316192?style=for-the-badge&logo=postgresql&logoColor=white" />
+  <img alt="Docker" src="https://img.shields.io/badge/Docker-2496ED?style=for-the-badge&logo=docker&logoColor=white" />
 </div>
 
 <br/>
 
-Serviço REST síncrono responsável pelo CRUD de unidades da clínica Humanizar, organizado por município em modelo **multi-tenant** (município = tenant). Protegido por OAuth2 JWT com controle de acesso baseado em roles (RBAC), persistência via JPA/Hibernate e opção de runtime em binário nativo (GraalVM Native Image).
+Serviço REST síncrono responsável pelo CRUD de municípios e unidades. A implementação preserva os contratos HTTP do serviço legado, com payloads de sucesso diretos, autenticação Bearer JWT, autorização por role e tratamento padronizado de erros. O runtime usa Axum e Tokio, acesso assíncrono ao PostgreSQL e composição explícita das dependências segundo Arquitetura Hexagonal.
 
 ## Arquitetura e Padrões
 
-- Arquitetura MVC (`controller`, `service`, `repository`, `model`).
-- Multi-tenancy por coluna discriminadora `tenant_id` em `units`, com `municipioId` informado **explicitamente** nas rotas (sem `@TenantId` e sem resolução automática por claim de JWT).
-- DTOs imutáveis com Java Records para contratos de entrada e saída.
-- Mappers manuais com validação de campos obrigatórios (`UnitMapper`, `MunicipioMapper`).
-- Exception handler global com respostas padronizadas (`UnitExceptionHandler`).
-- Controle de acesso por role via `@PreAuthorize` (RBAC).
-- Retry automático em falhas transientes de banco nos endpoints GET (`@Retry`).
-- Execução otimizada com Virtual Threads e opção de runtime em binário nativo (GraalVM Native Image).
+- Arquitetura Hexagonal organizada em `application`, `domain` e `infrastructure`.
+- Domínio independente de Axum, Tokio, PostgreSQL, Serde e detalhes HTTP.
+- DTOs imutáveis com campos privados, construtores e getters explícitos.
+- Mappers manuais para as conversões DTO ↔ domínio e domínio ↔ entity.
+- Ports de domínio implementados por adapters de infraestrutura, injetados com `Arc<dyn Trait>`.
+- Repositories com SQL explícito por meio de `tokio-postgres`.
+- Pool assíncrono com `bb8-postgres`, fila FIFO e validação da conexão no checkout.
+- Retry assíncrono somente para leituras idempotentes, com BackON e classificação explícita de falhas PostgreSQL.
+- Erros de domínio modelados por `ReasonCode` e transportados pelo handler HTTP genérico.
+- CORS, autenticação e autorização aplicados por composição de routers do Axum.
+- Graceful shutdown para `SIGTERM` e `Ctrl+C`.
+- Código próprio protegido por `#![forbid(unsafe_code)]`, sem FFI ou bindings nativos.
 
-## Multi-tenancy (município = tenant)
+## Regras de Domínio
 
-- Cada **município** é um tenant; um município registra **N unidades** (1:N).
-- Isolamento por coluna discriminadora `tenant_id` em `units` (mapeada do campo `municipioId` da entidade `Units`).
-- O `municipioId` é informado **explicitamente** como path variable em todas as rotas de unidades (`/api/v1/municipio/{municipioId}/units/...`).
-- `Municipio` é dado mestre **global** (não escopado por tenant); `codigo_ibge` é a chave natural única.
-- CNPJ é único por tenant (`uk_units_tenant_cnpj` em `tenant_id` + `cnpj`); leituras por tenant são indexadas (`idx_units_tenant`).
-- A rota `GET /api/v1/units?ids=...` é a exceção **cross-tenant**: resolve unidades por id sem exigir município (ver Interfaces).
+### Município
 
-## Interfaces internas protegidas (REST)
+- O código IBGE único.
+- O identificador enviado no body não substitui o identificador definido no path.
+
+### Unidade
+
+- A unidade deve estar vinculada a um município.
+- O CNPJ único.
+- Municípios diferentes podem possuir unidades com o mesmo CNPJ.
+- Update e delete exigem a combinação correta de `unitId` e `municipioId`.
+
+## Interfaces Internas Protegidas (REST)
 
 Base path: `/api/v1`
 
-### Unidades (escopadas por município)
+### Município
 
-- `GET /municipio/{municipioId}/units`
-    - Lista as unidades do município.
-    - Autorização: qualquer usuário autenticado.
-    - Retry automático em falhas transientes de banco (`@Retry`, max 2, timeout 30s).
-    - Response: `200 OK` com `List<UnitDTO>`.
-- `POST /municipio/{municipioId}/units/register`
-    - Cria uma nova unidade no município.
-    - Body obrigatório: `UnitDTO`.
-    - Autorização: `ROLE_ADMINISTRADOR`.
-    - Response: `201 Created` com `UnitDTO`.
-- `PUT /municipio/{municipioId}/units/update/{unitId}`
-    - Atualiza uma unidade existente do município.
-    - Body obrigatório: `UnitDTO`. Path variables: `municipioId`, `unitId` (UUID).
-    - Autorização: `ROLE_ADMINISTRADOR`.
-    - Response: `200 OK` com `UnitDTO`.
-- `DELETE /municipio/{municipioId}/units/delete/{unitId}`
-    - Remove uma unidade existente do município.
-    - Path variables: `municipioId`, `unitId` (UUID).
-    - Autorização: `ROLE_ADMINISTRADOR`.
-    - Response: `200 OK`.
+- `GET /municipio` — lista os municípios. Requer autenticação.
+- `GET /municipio/{municipioId}` — retorna um município. Requer autenticação.
+- `POST /municipio/register` — cria um município. Exige `ADMINISTRADOR`.
+- `PUT /municipio/update/{municipioId}` — atualiza um município. Exige `ADMINISTRADOR`.
+- `DELETE /municipio/delete/{municipioId}` — remove um município. Exige `ADMINISTRADOR`.
 
-### Unidades por id (lookup cross-tenant)
+### Unidade
 
-- `GET /units?ids={uuid1},{uuid2},...`
-    - Resolve unidades por lista de ids, **sem** exigir município.
-    - Usado por consumidores que armazenam apenas `unitId` (ex.: cadastro de paciente).
-    - Autorização: qualquer usuário autenticado. Retry transiente (`@Retry`).
-    - Response: `200 OK` com `List<UnitDTO>` (lista vazia quando `ids` ausente ou vazio).
+- `GET /municipio/{municipioId}/units` — lista as unidades do município. Requer autenticação.
+- `GET /units?ids={unitId1},{unitId2}` — busca unidades por IDs. Requer autenticação.
+- `POST /municipio/{municipioId}/units/register` — cria uma unidade. Exige `ADMINISTRADOR`.
+- `PUT /municipio/{municipioId}/units/update/{unitId}` — atualiza uma unidade. Exige `ADMINISTRADOR`.
+- `DELETE /municipio/{municipioId}/units/delete/{unitId}` — remove uma unidade. Exige `ADMINISTRADOR`.
 
-### Municípios
+Endpoint público:
 
-- `GET /municipio`
-    - Lista os municípios cadastrados.
-    - Autorização: qualquer usuário autenticado.
-    - Response: `200 OK` com `List<MunicipioDTO>`.
-- `GET /municipio/{municipioId}`
-    - Obtém um município por id.
-    - Autorização: qualquer usuário autenticado.
-    - Response: `200 OK` com `MunicipioDTO`.
-- `POST /municipio/register`
-    - Cadastra um novo município (tenant).
-    - Body obrigatório: `MunicipioDTO` (`codigoIbge`, `nome`, `uf`).
-    - Autorização: `ROLE_ADMINISTRADOR`.
-    - Response: `201 Created` com `MunicipioDTO`.
-- `PUT /municipio/update/{municipioId}`
-    - Atualiza um município.
-    - Autorização: `ROLE_ADMINISTRADOR`.
-    - Response: `200 OK` com `MunicipioDTO`.
-- `DELETE /municipio/delete/{municipioId}`
-    - Remove um município sem unidades vinculadas.
-    - Autorização: `ROLE_ADMINISTRADOR`.
-    - Response: `200 OK` (ou `409 MUNICIPIO_HAS_UNITS` se houver unidades vinculadas).
+- `GET /health` — retorna `200` com `{"status":"UP"}`.
 
-> Leitura requer apenas autenticação; escrita exige `ROLE_ADMINISTRADOR`.
-
-## ⛓️‍💥 Resiliência e Tolerância a Falhas
-
-### Retry transiente (endpoints GET)
-
-`@Retry` via `ResilientMethodsConfig` (Spring Framework 7 `@Retryable`).
-
-- Max retries: 2, timeout: 30s.
-- Predicate: `TransientDataAccessException`, `RecoverableDataAccessException`, `CannotCreateTransactionException`, `QueryTimeoutException`.
-
-### Connection pool (HikariCP)
-
-- Pool name: `humanizar-units-service`.
-- Connection timeout: 30s, idle timeout: 300s, max lifetime: 600s.
-- Min idle: 3, max pool size: 10.
-
-### Exception handler global
-
-`UnitExceptionHandler` captura exceções e retorna `UnitErrorResponseDTO` com status, reason code, mensagem, path e timestamp.
-
-Códigos de erro mapeados (`ReasonCode`):
-- `UNIT_NOT_FOUND` (404) — não retentável.
-- `MUNICIPIO_NOT_FOUND` (404) — não retentável.
-- `MUNICIPIO_DUPLICATED` (409) — não retentável.
-- `MUNICIPIO_HAS_UNITS` (409) — não retentável.
-- `TENANT_MISSING` (400) — não retentável.
-- `VALIDATION_ERROR` (400) — não retentável.
-- `AUTHENTICATION_FAILURE` (401) — não retentável.
-- `AUTHORIZATION_FAILURE` (403) — não retentável.
-- `PERSISTENCE_FAILURE` (503) — retentável.
+As respostas de sucesso permanecem diretas para compatibilidade com os consumidores existentes. Erros usam o envelope compartilhado com `timestamp`, `status`, `error`, `reasonCode`, `message` e `path`.
 
 ## 🔐 Segurança
 
-- API interna protegida por OAuth2 Resource Server JWT.
-- JWK configurado por `AUTH_SERVER_URL` (`${AUTH_SERVER_URL}/oauth2/jwks`).
-- RBAC: operações de escrita requerem `ROLE_ADMINISTRADOR`; leitura requer apenas autenticação.
-- CORS restrito a origens localhost.
-- Sessão stateless (sem estado no servidor).
-- Único endpoint público: `/actuator/health`.
+- Autenticação stateless exclusivamente por `Authorization: Bearer <jwt>`.
+- Tokens aceitos somente com assinatura RSA e algoritmo `RS256`.
+- Validação de `kid`, assinatura, `exp`, `nbf`, `iss`, `aud` e `sub`.
+- JWKS carregado de `${AUTH_SERVER_URL}/oauth2/jwks` durante o startup.
+- Cache JWKS concorrente com atualização controlada para rotação de chaves.
+- Claims `role` e `roles` normalizadas com ou sem o prefixo `ROLE_`.
+- Leituras exigem usuário autenticado; escritas exigem `ADMINISTRADOR`.
+- Respostas `401` usam `AUTHENTICATION_FAILURE` e respostas `403` usam `AUTHORIZATION_FAILURE`.
+- Bearer token, credenciais, senha e conteúdo completo do JWT não são registrados em log.
+
+## ⛓️‍💥 Resiliência e Persistência
+
+### Pool PostgreSQL
+
+Valores padrão:
+
+- Conexões mínimas: `3`.
+- Conexões máximas: `10`.
+- Timeout de aquisição: `30s`.
+- Idle timeout: `300s`.
+- Tempo máximo de vida: `600s`.
+- Transporte local sem TLS (`NoTls`).
+
+O startup falha caso não seja possível inicializar o pool ou criar as conexões mínimas.
+
+### Retry de leitura
+
+- Uma tentativa inicial e até duas novas tentativas.
+- Backoff exponencial de `100ms` até `1s`, fator `2` e jitter.
+- Timeout total de `30s`, incluindo execução e esperas.
+- Retry somente para falhas transitórias classificadas pelo `PostgresErrorHandler`.
+- Escritas não possuem retry automático para evitar duplicidade ou repetição de efeitos.
+
+### ReasonCode
+
+| Status | ReasonCode |
+|--------|------------|
+| `400` | `INVALID_REQUEST`, `VALIDATION_ERROR` |
+| `401` | `AUTHENTICATION_FAILURE` |
+| `403` | `AUTHORIZATION_FAILURE` |
+| `404` | `UNIT_NOT_FOUND`, `MUNICIPIO_NOT_FOUND` |
+| `409` | `UNIT_DUPLICATED`, `MUNICIPIO_DUPLICATED`, `MUNICIPIO_HAS_UNITS` |
+| `500` | `UNEXPECTED_ERROR` |
+| `503` | `PERSISTENCE_FAILURE` |
+
+Erros `4xx` são registrados como `warn`; erros `5xx`, como `error`. A causa técnica permanece apenas no encadeamento e nos logs, nunca no JSON público.
 
 ## Estrutura do Projeto
 
 ```text
-src/main/java/com/humanizar/units/
-|-- config/                        # CorsConfig, SecurityConfig, ObjectMapperConfig, ResilientMethodsConfig
-|-- controller/
-|   |-- dto/                       # UnitErrorResponseDTO
-|   |-- handler/                   # UnitExceptionHandler
-|   |-- municipio/                 # MunicipioController{Create,Retrieve,Update,Delete}
-|   `-- units/                     # UnitsController{Create,Retrieve,BatchRetrieve,Update,Delete}
-|-- dto/                           # UnitDTO, MunicipioDTO (Java Records)
-|-- exception/                     # UnitException, Throwables (utilitario de causa)
-|-- mapper/                        # UnitMapper, MunicipioMapper (validação e conversão)
-|-- model/                         # entidades Units, Municipio
-|   `-- enums/                     # ReasonCode
-|-- repository/                    # UnitsRepository, MunicipioRepository (JPA)
-`-- service/
-    |-- municipio/                 # MunicipioService{Create,Retrieve,Update,Delete}
-    `-- units/                     # UnitsService{Create,Retrieve,Update,Delete}
+src/
+|-- application/
+|   |-- dto/                       # contratos imutáveis de município e unidade
+|   |-- mapper/                    # validação e mappings manuais
+|   |-- service/                   # orquestração DTO ↔ use case
+|   `-- usecase/                   # regras de aplicação por agregado
+|-- domain/
+|   |-- exception/                 # exceções e contratos de ReasonCode
+|   |-- model/                     # Unit, Municipio e enums
+|   `-- port/                      # UnitPort e MunicipioPort
+`-- infrastructure/
+|   |-- adapter/                   # implementação dos ports
+|   |-- config/                    # ambiente, servidor, CORS, JWT, pool e retry
+|   |-- controller/                # controllers, extractors, DTOs HTTP e router
+|   |-- handler/                   # classificação de erros PostgreSQL
+|   |-- persistence/               # entities e repositories SQL
+|   |-- resilience/                # executor de retry assíncrono
+|   |-- security/                  # claims, JWKS, validação e autorização
+|   `-- server.rs                  # bootstrap e graceful shutdown
+|-- lib.rs                         # declaração e exposição dos módulos
+|-- main.rs                        # entrada Tokio sem lógica de composição
+
+tests/
+|-- application/
+|-- domain/
+|-- infrastructure/
+`-- support/
 ```
 
-## Como executar localmente
+O projeto não utiliza `mod.rs`. Os módulos públicos de primeiro nível são organizados em `lib.rs`, e os arquivos de produção não contêm módulos de teste.
+
+## Como Executar Localmente
 
 ### Pré-requisitos
-- JDK 25
-- Maven 3.9+
-- PostgreSQL
 
-### Variáveis de Ambiente (`.env`)
+- Rust `1.97+` com Cargo.
+- PostgreSQL acessível pela aplicação.
+- Auth Server com endpoint JWKS disponível.
+
+O serviço não cria tabelas nem executa migrations automaticamente. Antes do startup, o schema deve conter `public.municipio` e `public.units`, com `units.municipio_id` referenciando `municipio.id`.
+
+### Variáveis de Ambiente do Banco (`.env`)
 
 ```env
-DB_URL=jdbc:postgresql://localhost:5432/db
+DB_URL=postgresql://localhost:5432/db
 DB_USERNAME=postgres
 DB_PASSWORD=secret
-AUTH_SERVER_URL=http://localhost:8080
 ```
 
-### Execução local (JVM)
+### Execução local
 
 ```bash
-./mvnw clean install -DskipTests
-./mvnw spring-boot:run
+cargo run
 ```
 
 Porta padrão: `9095`
-Health check: `http://localhost:9095/actuator/health`
+Health check: `http://localhost:9095/health`
 
-## 🐳 Docker Native (GraalVM)
-
-O Dockerfile do módulo usa build multi-stage com GraalVM Native Image:
-
-1. Build stage (`ghcr.io/graalvm/native-image-community:25`) compila com:
-   - `./mvnw -Pnative -DskipTests native:compile`
-2. Runtime stage (`debian:bookworm-slim`) executa binário nativo:
-   - `/app/app-binario`
-
-Exemplo:
+### Quality gates
 
 ```bash
-docker build -t humanizar-units:native .
-docker run --rm -p 9095:9095 --env-file .env humanizar-units:native
+cargo fmt --check
+cargo clippy --all-targets -- -D warnings
+cargo test
+cargo check
+```
+
+O teste integrado de persistência usa o PostgreSQL configurado pelas variáveis de ambiente e remove os registros criados ao final.
+
+## Docker
+
+O Dockerfile usa build multi-stage:
+
+1. `rust:1.97.0-bookworm` compila o binário release com `cargo build --locked --release`.
+2. `debian:bookworm-slim` executa `/app/humanizar-units` com usuário sem privilégios.
+3. O health check consulta `/health` a cada 30 segundos.
+
+```bash
+docker build -t humanizar-units .
+docker run --rm -p 9095:9095 --env-file .env humanizar-units:latest
 ```

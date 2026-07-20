@@ -1,44 +1,33 @@
-# -- Stage de Build (GraalVM Java 25) --
-FROM ghcr.io/graalvm/native-image-community:25 AS builder
+FROM rust:1.97.0-bookworm AS builder
 
 WORKDIR /app
 
-# Copia Arquivos Necessários para o Build
-COPY mvnw .
-COPY .mvn/ .mvn/
-COPY pom.xml .
-
-# Permissão de execução no Wrapper mvnw
-RUN chmod +x mvnw
-
-# Baixa Dependências no Modo Nativo
-RUN ./mvnw -Pnative -DskipTests dependency:go-offline
-
-# Copia o Código-Fonte para o Container
+COPY Cargo.toml Cargo.lock ./
 COPY src ./src
 
-# Compila a Aplicação para um Binário Nativo
-ARG AUTH_SERVER_URL
-RUN AUTH_SERVER_URL="${AUTH_SERVER_URL}" \
-    ./mvnw -Pnative -DskipTests native:compile
+RUN cargo build --locked --release
 
-# -- Stage Runtime (Debian Slim) --
-FROM debian:bookworm-slim
+FROM debian:bookworm-slim AS runtime
 
 WORKDIR /app
 
-# Instala o Curl para Health Checks e Limpa Cache do APT
-RUN apt-get update && apt-get install -y curl && rm -rf /var/lib/apt/lists/*
+RUN apt-get update \
+    && apt-get install --yes --no-install-recommends ca-certificates curl \
+    && rm -rf /var/lib/apt/lists/* \
+    && groupadd --system appgroup \
+    && useradd --system --gid appgroup --no-create-home appuser
 
-# Cria um user non-root
-RUN groupadd -r appgroup && useradd -r -g appgroup appuser
+COPY --from=builder --chown=appuser:appgroup /app/target/release/humanizar-units /app/humanizar-units
 
-# Copia o Binário Nativo do Stage Build para o Stage Runtime
-COPY --from=builder --chown=appuser:appgroup /app/target/humanizar-units /app/app-binario
+ENV APP_ENV=production \
+    SERVER_HOST=0.0.0.0 \
+    SERVER_PORT=9095
 
 EXPOSE 9095
-HEALTHCHECK --interval=30s --timeout=5s --start-period=20s --retries=3 CMD ["curl", "-fsS", "http://localhost:9095/actuator/health"]
+
+HEALTHCHECK --interval=30s --timeout=5s --start-period=10s --retries=3 \
+    CMD ["curl", "--fail", "--silent", "--show-error", "http://127.0.0.1:9095/health"]
+
 USER appuser
 
-# Ponto de Entrada no Docker, Executa o Binário Nativo com Configurações de TTL para DNS
-ENTRYPOINT ["/app/app-binario", "-Dsun.net.inetaddr.ttl=30", "-Dsun.net.inetaddr.negative.ttl=2"]
+ENTRYPOINT ["/app/humanizar-units"]
