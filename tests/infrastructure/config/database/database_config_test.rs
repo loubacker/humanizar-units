@@ -3,6 +3,7 @@
 use std::time::Duration;
 
 use humanizar_units::infrastructure::config::{DatabaseConfig, DatabaseSettings};
+use humanizar_units::infrastructure::diagnostics::StartupReport;
 
 #[test]
 fn settings_preserve_hikari_defaults_and_normalize_jdbc_url() {
@@ -96,8 +97,24 @@ fn pool_policy_rejects_invalid_sizes_and_timeouts() {
     );
 }
 
+#[test]
+fn settings_expose_the_endpoint_and_the_username_without_the_password() {
+    let settings = DatabaseSettings::new(
+        "jdbc:postgresql://db:5432/humanizar_units?sslmode=disable",
+        "humanizar",
+        "senha-de-teste",
+    )
+    .expect("as configurações devem ser válidas");
+
+    assert_eq!(
+        "postgresql://db:5432/humanizar_units",
+        settings.endpoint().as_str()
+    );
+    assert_eq!("humanizar", settings.username());
+}
+
 #[tokio::test]
-async fn startup_fails_when_postgres_is_unavailable() {
+async fn startup_failure_reports_the_endpoint_and_the_technical_cause() {
     let listener = tokio::net::TcpListener::bind("127.0.0.1:0")
         .await
         .expect("uma porta deve ser reservada");
@@ -108,7 +125,7 @@ async fn startup_fails_when_postgres_is_unavailable() {
     let settings = DatabaseSettings::new(
         format!("postgresql://{address}/humanizar_units"),
         "humanizar",
-        "secret",
+        "senha-de-teste",
     )
     .expect("as configurações devem ser válidas")
     .with_pool_policy(
@@ -124,6 +141,15 @@ async fn startup_fails_when_postgres_is_unavailable() {
         .await
         .err()
         .expect("o startup deve falhar sem PostgreSQL");
+    let report = StartupReport::failure(&error);
 
-    assert_eq!("Falha ao inicializar o pool PostgreSQL", error.to_string());
+    assert_eq!(
+        format!(
+            "Falha ao inicializar o pool PostgreSQL em postgresql://{address}/humanizar_units com o usuário humanizar"
+        ),
+        error.to_string()
+    );
+    assert!(report.starts_with("Falha ao iniciar humanizar-units: "));
+    assert!(report.contains("\n  causa 1: "));
+    assert!(!report.contains("senha-de-teste"));
 }

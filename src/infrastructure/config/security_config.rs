@@ -7,9 +7,10 @@ use axum::middleware;
 use url::Url;
 
 use crate::domain::exception::TechnicalError;
+use crate::infrastructure::diagnostics::SafeUrl;
 
 use crate::infrastructure::security::{
-    JwksCache, JwtValidator, authenticate, require_administrator,
+    JwksCache, JwksHttpTimeouts, JwtValidator, authenticate, require_administrator,
 };
 
 use super::EnvironmentConfig;
@@ -19,6 +20,8 @@ pub type SecurityConfigError = TechnicalError;
 const DEFAULT_AUDIENCE: &str = "humanizar-client";
 const DEFAULT_CACHE_TTL_SECONDS: u64 = 300;
 const DEFAULT_REFRESH_INTERVAL_SECONDS: u64 = 10;
+const DEFAULT_CONNECT_TIMEOUT_SECONDS: u64 = 5;
+const DEFAULT_REQUEST_TIMEOUT_SECONDS: u64 = 10;
 
 #[derive(Debug, Clone)]
 pub struct SecuritySettings {
@@ -27,6 +30,8 @@ pub struct SecuritySettings {
     audience: String,
     cache_ttl: Duration,
     minimum_refresh_interval: Duration,
+    connect_timeout: Duration,
+    request_timeout: Duration,
 }
 
 impl SecuritySettings {
@@ -43,9 +48,18 @@ impl SecuritySettings {
             "JWKS_REFRESH_INTERVAL_SECONDS",
             DEFAULT_REFRESH_INTERVAL_SECONDS,
         )?;
+        let connect_timeout = EnvironmentConfig::positive_duration_seconds(
+            "JWKS_CONNECT_TIMEOUT_SECONDS",
+            DEFAULT_CONNECT_TIMEOUT_SECONDS,
+        )?;
+        let request_timeout = EnvironmentConfig::positive_duration_seconds(
+            "JWKS_REQUEST_TIMEOUT_SECONDS",
+            DEFAULT_REQUEST_TIMEOUT_SECONDS,
+        )?;
 
-        Self::new(auth_server_url, issuer, audience)
-            .map(|settings| settings.with_cache_policy(cache_ttl, minimum_refresh_interval))
+        Self::new(auth_server_url, issuer, audience)?
+            .with_cache_policy(cache_ttl, minimum_refresh_interval)
+            .with_http_timeouts(connect_timeout, request_timeout)
     }
 
     pub fn new(
@@ -65,6 +79,12 @@ impl SecuritySettings {
             ));
         }
 
+        if !base_url.username().is_empty() || base_url.password().is_some() {
+            return Err(SecurityConfigError::new(
+                "AUTH_SERVER_URL não deve conter usuário ou senha",
+            ));
+        }
+
         base_url.set_path("/");
         base_url.set_query(None);
         base_url.set_fragment(None);
@@ -78,6 +98,8 @@ impl SecuritySettings {
             audience,
             cache_ttl: Duration::from_secs(DEFAULT_CACHE_TTL_SECONDS),
             minimum_refresh_interval: Duration::from_secs(DEFAULT_REFRESH_INTERVAL_SECONDS),
+            connect_timeout: Duration::from_secs(DEFAULT_CONNECT_TIMEOUT_SECONDS),
+            request_timeout: Duration::from_secs(DEFAULT_REQUEST_TIMEOUT_SECONDS),
         })
     }
 
@@ -91,8 +113,35 @@ impl SecuritySettings {
         self
     }
 
+    pub fn with_http_timeouts(
+        mut self,
+        connect_timeout: Duration,
+        request_timeout: Duration,
+    ) -> Result<Self, SecurityConfigError> {
+        if connect_timeout.is_zero() || request_timeout.is_zero() {
+            return Err(SecurityConfigError::new(
+                "Os timeouts do JWKS devem ser maiores que zero",
+            ));
+        }
+
+        if connect_timeout > request_timeout {
+            return Err(SecurityConfigError::new(
+                "JWKS_CONNECT_TIMEOUT_SECONDS não pode ser maior que JWKS_REQUEST_TIMEOUT_SECONDS",
+            ));
+        }
+
+        self.connect_timeout = connect_timeout;
+        self.request_timeout = request_timeout;
+
+        Ok(self)
+    }
+
     pub fn jwks_url(&self) -> &Url {
         &self.jwks_url
+    }
+
+    pub fn jwks_endpoint(&self) -> SafeUrl {
+        SafeUrl::from_url(&self.jwks_url)
     }
 
     pub fn issuer(&self) -> &str {
@@ -101,6 +150,14 @@ impl SecuritySettings {
 
     pub fn audience(&self) -> &str {
         &self.audience
+    }
+
+    pub const fn connect_timeout(&self) -> Duration {
+        self.connect_timeout
+    }
+
+    pub const fn request_timeout(&self) -> Duration {
+        self.request_timeout
     }
 }
 
@@ -115,16 +172,43 @@ impl SecurityConfig {
     }
 
     pub async fn initialize(settings: SecuritySettings) -> Result<Self, SecurityConfigError> {
+        let jwks_endpoint = settings.jwks_endpoint();
+
+        tracing::info!(
+            jwks = %jwks_endpoint,
+            emissor = settings.issuer(),
+            audiencia = settings.audience(),
+            timeout_conexao_segundos = settings.connect_timeout().as_secs(),
+            timeout_resposta_segundos = settings.request_timeout().as_secs(),
+            "Carregando o JWKS do auth server"
+        );
+
+        let SecuritySettings {
+            jwks_url,
+            issuer,
+            audience,
+            cache_ttl,
+            minimum_refresh_interval,
+            connect_timeout,
+            request_timeout,
+        } = settings;
         let jwks_cache = JwksCache::initialize(
-            settings.jwks_url,
-            settings.cache_ttl,
-            settings.minimum_refresh_interval,
+            jwks_url,
+            cache_ttl,
+            minimum_refresh_interval,
+            JwksHttpTimeouts::new(connect_timeout, request_timeout),
         )
         .await
         .map_err(|error| {
-            SecurityConfigError::with_source("Falha ao inicializar o cache JWKS", error)
+            SecurityConfigError::with_source(
+                format!("Falha ao inicializar o cache JWKS em {jwks_endpoint}"),
+                error,
+            )
         })?;
-        let validator = JwtValidator::new(jwks_cache, &settings.issuer, &settings.audience);
+
+        tracing::info!(jwks = %jwks_endpoint, "JWKS carregado");
+
+        let validator = JwtValidator::new(jwks_cache, &issuer, &audience);
 
         Ok(Self {
             validator: Arc::new(validator),

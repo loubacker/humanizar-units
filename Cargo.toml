@@ -2,6 +2,7 @@
 name = "humanizar-units"
 version = "0.1.0"
 edition = "2024"
+rust-version = "1.98"
 
 [dependencies]
 async-trait = "0.1.89"
@@ -56,6 +57,10 @@ path = "tests/infrastructure/config/cors/cors_config_test.rs"
 [[test]]
 name = "security_config_test"
 path = "tests/infrastructure/config/security/security_config_test.rs"
+
+[[test]]
+name = "startup_diagnostics_test"
+path = "tests/infrastructure/diagnostics/startup_diagnostics_test.rs"
 
 [[test]]
 name = "jwt_validator_test"

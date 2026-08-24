@@ -7,8 +7,21 @@ use tokio::sync::{Mutex, RwLock};
 use url::Url;
 
 use crate::domain::exception::TechnicalError;
+use crate::infrastructure::diagnostics::SafeUrl;
 
 pub(crate) type JwksCacheError = TechnicalError;
+
+#[derive(Debug, Clone, Copy)]
+pub(crate) struct JwksHttpTimeouts {
+    connect: Duration,
+    request: Duration,
+}
+
+impl JwksHttpTimeouts {
+    pub(crate) const fn new(connect: Duration, request: Duration) -> Self {
+        Self { connect, request }
+    }
+}
 
 pub(crate) struct JwksCache {
     client: reqwest::Client,
@@ -24,8 +37,11 @@ impl JwksCache {
         jwks_url: Url,
         cache_ttl: Duration,
         minimum_refresh_interval: Duration,
+        timeouts: JwksHttpTimeouts,
     ) -> Result<Arc<Self>, JwksCacheError> {
         let client = reqwest::Client::builder()
+            .connect_timeout(timeouts.connect)
+            .timeout(timeouts.request)
             .build()
             .map_err(|error| JwksCacheError::with_source("Falha ao criar cliente JWKS", error))?;
         let keys = fetch_jwks(&client, &jwks_url).await?;
@@ -124,20 +140,26 @@ fn unknown_key(key_id: &str) -> JwksCacheError {
 }
 
 async fn fetch_jwks(client: &reqwest::Client, jwks_url: &Url) -> Result<JwkSet, JwksCacheError> {
+    let endpoint = SafeUrl::from_url(jwks_url);
     let response = client
         .get(jwks_url.clone())
         .send()
         .await
-        .map_err(|error| JwksCacheError::with_source("Falha ao consultar JWKS", error))?
+        .map_err(|error| {
+            JwksCacheError::with_source(format!("Falha ao consultar o JWKS em {endpoint}"), error)
+        })?
         .error_for_status()
-        .map_err(|error| JwksCacheError::with_source("JWKS respondeu com erro", error))?;
-    let keys = response
-        .json::<JwkSet>()
-        .await
-        .map_err(|error| JwksCacheError::with_source("Resposta JWKS inválida", error))?;
+        .map_err(|error| {
+            JwksCacheError::with_source(format!("O JWKS em {endpoint} respondeu com erro"), error)
+        })?;
+    let keys = response.json::<JwkSet>().await.map_err(|error| {
+        JwksCacheError::with_source(format!("Resposta inválida do JWKS em {endpoint}"), error)
+    })?;
 
     if keys.keys.is_empty() {
-        return Err(JwksCacheError::new("Resposta JWKS não contém chaves"));
+        return Err(JwksCacheError::new(format!(
+            "O JWKS em {endpoint} não contém chaves"
+        )));
     }
 
     Ok(keys)

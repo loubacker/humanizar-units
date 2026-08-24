@@ -6,6 +6,7 @@ use tokio_postgres::{Config as PostgresConfig, NoTls};
 use url::Url;
 
 use crate::domain::exception::{PersistenceException, TechnicalError};
+use crate::infrastructure::diagnostics::SafeUrl;
 
 use super::EnvironmentConfig;
 
@@ -20,7 +21,7 @@ const DEFAULT_MAX_LIFETIME_SECONDS: u64 = 600;
 type Manager = PostgresConnectionManager<NoTls>;
 
 pub struct DatabaseSettings {
-    database_url: String,
+    database_url: Url,
     username: String,
     password: String,
     minimum_idle: u32,
@@ -107,7 +108,15 @@ impl DatabaseSettings {
     }
 
     pub fn database_url(&self) -> &str {
-        &self.database_url
+        self.database_url.as_str()
+    }
+
+    pub fn username(&self) -> &str {
+        &self.username
+    }
+
+    pub fn endpoint(&self) -> SafeUrl {
+        SafeUrl::from_url(&self.database_url)
     }
 
     pub const fn minimum_idle(&self) -> u32 {
@@ -133,8 +142,14 @@ impl DatabaseSettings {
     fn postgres_config(&self) -> Result<PostgresConfig, DatabaseConfigError> {
         let mut config = self
             .database_url
+            .as_str()
             .parse::<PostgresConfig>()
-            .map_err(|error| DatabaseConfigError::with_source("DB_URL inválida", error))?;
+            .map_err(|error| {
+                DatabaseConfigError::with_source(
+                    format!("DB_URL inválida para {}", self.endpoint()),
+                    error,
+                )
+            })?;
         config.user(&self.username);
         config.password(self.password.as_bytes());
 
@@ -153,6 +168,17 @@ impl DatabaseConfig {
     }
 
     pub async fn initialize(settings: DatabaseSettings) -> Result<Self, DatabaseConfigError> {
+        let endpoint = settings.endpoint();
+
+        tracing::info!(
+            banco = %endpoint,
+            usuario = settings.username(),
+            conexoes_minimas = settings.minimum_idle,
+            conexoes_maximas = settings.maximum_pool_size,
+            timeout_conexao_segundos = settings.connection_timeout.as_secs(),
+            "Inicializando o pool PostgreSQL"
+        );
+
         let manager = PostgresConnectionManager::new(settings.postgres_config()?, NoTls);
         let pool = Pool::builder()
             .min_idle(Some(settings.minimum_idle))
@@ -166,8 +192,16 @@ impl DatabaseConfig {
             .build(manager)
             .await
             .map_err(|error| {
-                DatabaseConfigError::with_source("Falha ao inicializar o pool PostgreSQL", error)
+                DatabaseConfigError::with_source(
+                    format!(
+                        "Falha ao inicializar o pool PostgreSQL em {endpoint} com o usuário {}",
+                        settings.username()
+                    ),
+                    error,
+                )
             })?;
+
+        tracing::info!(banco = %endpoint, "Pool PostgreSQL inicializado");
 
         Ok(Self { pool })
     }
@@ -177,7 +211,7 @@ impl DatabaseConfig {
     }
 }
 
-fn normalize_database_url(value: &str) -> Result<String, DatabaseConfigError> {
+fn normalize_database_url(value: &str) -> Result<Url, DatabaseConfigError> {
     let value = value.trim();
 
     if value.is_empty() {
@@ -216,7 +250,7 @@ fn normalize_database_url(value: &str) -> Result<String, DatabaseConfigError> {
         ));
     }
 
-    Ok(value.to_owned())
+    Ok(url)
 }
 
 fn normalize_required(name: &str, value: String) -> Result<String, DatabaseConfigError> {
