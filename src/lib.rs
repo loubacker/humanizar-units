@@ -139,6 +139,14 @@ pub mod infrastructure {
         pub use state::ApplicationState;
     }
 
+    pub mod diagnostics {
+        mod safe_url;
+        mod startup_report;
+
+        pub use safe_url::SafeUrl;
+        pub use startup_report::StartupReport;
+    }
+
     pub mod handler {
         mod postgres_error_handler;
 
@@ -180,7 +188,7 @@ pub mod infrastructure {
 
         pub use authenticated_user::AuthenticatedUser;
         pub(crate) use authorization::{authenticate, require_administrator};
-        pub(crate) use jwks_cache::JwksCache;
+        pub(crate) use jwks_cache::{JwksCache, JwksHttpTimeouts};
         pub(crate) use jwt_validator::JwtValidator;
     }
 

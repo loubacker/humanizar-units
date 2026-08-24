@@ -2,7 +2,7 @@
   <h1>Humanizar - Units (Microservice)</h1>
   <p>Gestão de municípios e unidades da clínica Humanizar em Rust, com API interna protegida e persistência PostgreSQL assíncrona.</p>
 
-  <img alt="Rust" src="https://img.shields.io/badge/Rust-1.97-000000?style=for-the-badge&logo=rust&logoColor=white" />
+  <img alt="Rust" src="https://img.shields.io/badge/Rust-1.98-000000?style=for-the-badge&logo=rust&logoColor=white" />
   <img alt="Axum" src="https://img.shields.io/badge/Axum-0.8-7B1FA2?style=for-the-badge&logo=rust&logoColor=white" />
   <img alt="Tokio" src="https://img.shields.io/badge/Tokio-1.53-2C5BB4?style=for-the-badge&logo=rust&logoColor=white" />
   <img alt="PostgreSQL" src="https://img.shields.io/badge/PostgreSQL-316192?style=for-the-badge&logo=postgresql&logoColor=white" />
@@ -74,6 +74,8 @@ As respostas de sucesso permanecem diretas para compatibilidade com os consumido
 - Tokens aceitos somente com assinatura RSA e algoritmo `RS256`.
 - Validação de `kid`, assinatura, `exp`, `nbf`, `iss`, `aud` e `sub`.
 - JWKS carregado de `${AUTH_SERVER_URL}/oauth2/jwks` durante o startup.
+- `AUTH_SERVER_URL` não pode conter usuário ou senha embutidos.
+- Consulta JWKS com timeout de conexão e de resposta explícitos, no startup e nas atualizações.
 - Cache JWKS concorrente com atualização controlada para rotação de chaves.
 - Claims `role` e `roles` normalizadas com ou sem o prefixo `ROLE_`.
 - Leituras exigem usuário autenticado; escritas exigem `ADMINISTRADOR`.
@@ -117,6 +119,41 @@ O startup falha caso não seja possível inicializar o pool ou criar as conexõe
 
 Erros `4xx` são registrados como `warn`; erros `5xx`, como `error`. A causa técnica permanece apenas no encadeamento e nos logs, nunca no JSON público.
 
+## Diagnóstico de Startup
+
+O bootstrap é executado em etapas ordenadas, e cada etapa registra o destino configurado antes de tentar usá-lo:
+
+1. Configuração de ambiente, servidor, CORS e retry.
+2. Pool PostgreSQL, com `banco`, `usuario`, tamanhos e timeout de conexão.
+3. Cache JWKS, com `jwks`, `emissor`, `audiencia` e timeouts HTTP.
+4. Listener HTTP, com `host` e `port`.
+
+Quando uma etapa falha, o processo encerra com código `1` e escreve em `stderr` a mensagem principal seguida da cadeia técnica completa:
+
+```text
+Falha ao iniciar humanizar-units: Falha ao inicializar o pool PostgreSQL em postgresql://db:5432/humanizar_units com o usuário postgres
+  causa 1: error connecting to server: Connection refused (os error 111)
+  causa 2: Connection refused (os error 111)
+```
+
+```text
+Falha ao iniciar humanizar-units: Falha ao inicializar o cache JWKS em http://auth:9091/oauth2/jwks
+  causa 1: Falha ao consultar o JWKS em http://auth:9091/oauth2/jwks
+  causa 2: error sending request
+  causa 3: operation timed out
+```
+
+Toda URL registrada em log ou em mensagem de erro passa por sanitização que descarta usuário, senha, query e fragment. A senha do banco, o Bearer token e o conteúdo do JWT nunca são registrados.
+
+### Variáveis de Diagnóstico e Timeout do JWKS
+
+| Variável | Padrão | Efeito |
+|----------|--------|--------|
+| `JWKS_CONNECT_TIMEOUT_SECONDS` | `5` | Tempo máximo para estabelecer a conexão TCP/TLS com o auth server. |
+| `JWKS_REQUEST_TIMEOUT_SECONDS` | `10` | Tempo máximo total da requisição JWKS, incluindo a conexão. |
+
+O timeout de conexão não pode superar o timeout de resposta. Sem esses limites, um auth server que aceita a conexão e não responde suspenderia o startup indefinidamente.
+
 ## Estrutura do Projeto
 
 ```text
@@ -134,6 +171,7 @@ src/
 |   |-- adapter/                   # implementação dos ports
 |   |-- config/                    # ambiente, servidor, CORS, JWT, pool e retry
 |   |-- controller/                # controllers, extractors, DTOs HTTP e router
+|   |-- diagnostics/               # URL sanitizada e relatório de falha de startup
 |   |-- handler/                   # classificação de erros PostgreSQL
 |   |-- persistence/               # entities e repositories SQL
 |   |-- resilience/                # executor de retry assíncrono
@@ -155,19 +193,23 @@ O projeto não utiliza `mod.rs`. Os módulos públicos de primeiro nível são o
 
 ### Pré-requisitos
 
-- Rust `1.97+` com Cargo.
+- Rust `1.98+` com Cargo.
 - PostgreSQL acessível pela aplicação.
 - Auth Server com endpoint JWKS disponível.
 
 O serviço não cria tabelas nem executa migrations automaticamente. Antes do startup, o schema deve conter `public.municipio` e `public.units`, com `units.municipio_id` referenciando `municipio.id`.
 
-### Variáveis de Ambiente do Banco (`.env`)
+### Variáveis de Ambiente (`.env`)
+
+O contrato completo, com placeholders e sem segredos, está em `.env.example`. O `.env` local é ignorado pelo Git.
 
 ```env
 DB_URL=postgresql://localhost:5432/db
 DB_USERNAME=postgres
 DB_PASSWORD=secret
 ```
+
+`DB_URL` não aceita usuário nem senha embutidos: as credenciais chegam apenas por `DB_USERNAME` e `DB_PASSWORD`.
 
 ### Execução local
 
@@ -193,7 +235,7 @@ O teste integrado de persistência usa o PostgreSQL configurado pelas variáveis
 
 O Dockerfile usa build multi-stage:
 
-1. `rust:1.97.0-bookworm` compila o binário release com `cargo build --locked --release`.
+1. `rust:1.98.0-bookworm` compila o binário release com `cargo build --locked --release`.
 2. `debian:bookworm-slim` executa `/app/humanizar-units` com usuário sem privilégios.
 3. O health check consulta `/health` a cada 30 segundos.
 
@@ -201,3 +243,5 @@ O Dockerfile usa build multi-stage:
 docker build -t humanizar-units .
 docker run --rm -p 9095:9095 --env-file .env humanizar-units:latest
 ```
+
+O `.env` não é copiado para a imagem: as variáveis chegam por `--env-file` ou pelo orquestrador. Falhas de configuração encerram o container com código `1`, e `docker logs` mostra a etapa que falhou, o destino configurado e a cadeia técnica descrita em [Diagnóstico de Startup](#diagnóstico-de-startup).

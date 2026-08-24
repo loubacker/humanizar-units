@@ -16,6 +16,8 @@ use crate::infrastructure::persistence::repository::{MunicipioRepository, UnitRe
 pub async fn run() -> Result<(), TechnicalError> {
     initialize_tracing()?;
 
+    tracing::info!("Carregando a configuração do humanizar-units");
+
     let server = ServerConfig::from_env()?;
     let cors = CorsConfig::from_env()?;
     let retry = RetryConfig::from_env()?;
