@@ -8,7 +8,11 @@ use super::authenticated_user::{AuthenticatedUser, normalize_role};
 pub(crate) struct JwtClaims {
     sub: String,
     #[serde(default)]
+    azp: Option<String>,
+    #[serde(default)]
     client_id: Option<String>,
+    #[serde(default)]
+    realm_access: RealmAccessClaim,
     #[serde(default)]
     role: Option<RoleClaim>,
     #[serde(default)]
@@ -23,11 +27,18 @@ impl JwtClaims {
     pub(crate) fn into_authenticated_user(self) -> AuthenticatedUser {
         let mut roles = HashSet::new();
 
+        append_role_values(&mut roles, self.realm_access.roles);
         append_roles(&mut roles, self.role);
         append_roles(&mut roles, self.roles);
 
-        AuthenticatedUser::new(self.sub, self.client_id, roles)
+        AuthenticatedUser::new(self.sub, self.azp.or(self.client_id), roles)
     }
+}
+
+#[derive(Debug, Default, Deserialize)]
+struct RealmAccessClaim {
+    #[serde(default)]
+    roles: Vec<String>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -49,11 +60,15 @@ fn append_roles(roles: &mut HashSet<String>, claim: Option<RoleClaim>) {
             }
         }
         RoleClaim::List(values) => {
-            for value in values {
-                for role in value.split(',') {
-                    insert_role(roles, role);
-                }
-            }
+            append_role_values(roles, values);
+        }
+    }
+}
+
+fn append_role_values(roles: &mut HashSet<String>, values: Vec<String>) {
+    for value in values {
+        for role in value.split(',') {
+            insert_role(roles, role);
         }
     }
 }

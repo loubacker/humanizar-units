@@ -1,3 +1,5 @@
+#![forbid(unsafe_code)]
+
 mod test_support;
 
 use axum::Router;
@@ -17,7 +19,7 @@ async fn authenticated_reads_and_administrator_writes_are_explicitly_separated()
     let server = JwksServer::start("active-key").await;
     let security = security_config(&server).await;
     let mut coordinator_claims = TestClaims::valid();
-    coordinator_claims.role = Some(json!("COORDENADOR"));
+    coordinator_claims.realm_access = Some(json!({ "roles": ["COORDENADOR"] }));
     let coordinator_token = rsa_token("active-key", &coordinator_claims);
     let administrator_token = rsa_token("active-key", &TestClaims::valid());
     let app = application_router(&security);
@@ -65,7 +67,7 @@ async fn security_returns_shared_error_contract_with_path_and_reason_code() {
         .await
         .expect("a resposta 401 deve ser processada");
     let mut user_claims = TestClaims::valid();
-    user_claims.role = Some(json!("COORDENADOR"));
+    user_claims.realm_access = Some(json!({ "roles": ["COORDENADOR"] }));
     let token = rsa_token("active-key", &user_claims);
     let forbidden = app
         .oneshot(cors_request(Method::POST, "/api/v1/units", Some(&token)))

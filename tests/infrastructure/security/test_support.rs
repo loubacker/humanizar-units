@@ -22,12 +22,14 @@ use tokio::task::JoinHandle;
 
 pub const ISSUER: &str = "https://auth.humanizar.test";
 pub const AUDIENCE: &str = "humanizar-client";
+pub const AUTHORIZED_PARTY: &str = "humanizar-admin-dashboard";
 pub const SUBJECT: &str = "47c713bf-d4e5-45ff-bada-0a2969739667";
+const JWKS_PATH: &str = "/realms/humanizar/protocol/openid-connect/certs";
 
 pub const PRIVATE_KEY_FOR_TESTS: &[u8] = include_bytes!("fixtures/test_private_key.pem");
 
 pub struct JwksServer {
-    base_url: String,
+    jwks_url: String,
     state: Arc<RwLock<Value>>,
     requests: Arc<AtomicUsize>,
     task: JoinHandle<()>,
@@ -42,7 +44,7 @@ impl JwksServer {
             requests: Arc::clone(&requests),
         };
         let app = Router::new()
-            .route("/oauth2/jwks", get(jwks_handler))
+            .route(JWKS_PATH, get(jwks_handler))
             .with_state(app_state);
         let listener = tokio::net::TcpListener::bind("127.0.0.1:0")
             .await
@@ -57,15 +59,15 @@ impl JwksServer {
         });
 
         Self {
-            base_url: format!("http://{address}"),
+            jwks_url: format!("http://{address}{JWKS_PATH}"),
             state,
             requests,
             task,
         }
     }
 
-    pub fn base_url(&self) -> &str {
-        &self.base_url
+    pub fn jwks_url(&self) -> &str {
+        &self.jwks_url
     }
 
     pub async fn replace_key(&self, key_id: &str) {
@@ -95,7 +97,7 @@ async fn jwks_handler(State(state): State<ServerState>) -> Json<Value> {
 }
 
 pub async fn security_config(server: &JwksServer) -> SecurityConfig {
-    let settings = SecuritySettings::new(server.base_url(), ISSUER, AUDIENCE)
+    let settings = SecuritySettings::new(server.jwks_url(), ISSUER, AUDIENCE)
         .expect("as configurações de teste devem ser válidas")
         .with_cache_policy(Duration::from_secs(300), Duration::from_millis(1));
 
@@ -109,11 +111,15 @@ pub struct TestClaims {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub sub: Option<String>,
     pub iss: String,
-    pub aud: String,
+    pub aud: Value,
     pub exp: u64,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub nbf: Option<u64>,
-    pub client_id: String,
+    pub azp: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub client_id: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub realm_access: Option<Value>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub role: Option<Value>,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -125,11 +131,13 @@ impl TestClaims {
         Self {
             sub: Some(SUBJECT.to_owned()),
             iss: ISSUER.to_owned(),
-            aud: AUDIENCE.to_owned(),
+            aud: json!([AUDIENCE, "humanizar-admin-gateway"]),
             exp: now_for_tests() + 3_600,
             nbf: Some(now_for_tests().saturating_sub(1)),
-            client_id: AUDIENCE.to_owned(),
-            role: Some(json!("ADMINISTRADOR")),
+            azp: Some(AUTHORIZED_PARTY.to_owned()),
+            client_id: None,
+            realm_access: Some(json!({ "roles": ["ADMINISTRADOR"] })),
+            role: None,
             roles: None,
         }
     }

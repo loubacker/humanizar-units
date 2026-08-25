@@ -375,13 +375,13 @@ fn test_router(
 
 fn coordinator_token() -> String {
     let mut claims = TestClaims::valid();
-    claims.role = Some(json!("COORDENADOR"));
+    claims.realm_access = Some(json!({ "roles": ["COORDENADOR"] }));
     rsa_token("active-key", &claims)
 }
 
 fn prefixed_administrator_token() -> String {
     let mut claims = TestClaims::valid();
-    claims.role = Some(json!("ROLE_ADMINISTRADOR"));
+    claims.realm_access = Some(json!({ "roles": ["ROLE_ADMINISTRADOR"] }));
     rsa_token("active-key", &claims)
 }
 

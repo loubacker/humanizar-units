@@ -19,11 +19,12 @@ fn safe_url_removes_credentials_query_and_fragment() {
 
 #[test]
 fn safe_url_preserves_implicit_ports_and_paths() {
-    let url = Url::parse("https://auth.humanizar.test/oauth2/jwks")
-        .expect("a URL de teste deve ser válida");
+    let url =
+        Url::parse("https://auth.humanizar.test/realms/humanizar/protocol/openid-connect/certs")
+            .expect("a URL de teste deve ser válida");
 
     assert_eq!(
-        "https://auth.humanizar.test/oauth2/jwks",
+        "https://auth.humanizar.test/realms/humanizar/protocol/openid-connect/certs",
         SafeUrl::from_url(&url).as_str()
     );
 }

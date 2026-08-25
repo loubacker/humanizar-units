@@ -1,3 +1,5 @@
+#![forbid(unsafe_code)]
+
 mod test_support;
 
 use axum::extract::Extension;
@@ -13,7 +15,8 @@ use serde_json::{Value, json};
 use tower::ServiceExt;
 
 use test_support::{
-    AUDIENCE, JwksServer, PRIVATE_KEY_FOR_TESTS, TestClaims, hmac_token, rsa_token, security_config,
+    AUTHORIZED_PARTY, JwksServer, PRIVATE_KEY_FOR_TESTS, TestClaims, hmac_token, rsa_token,
+    security_config,
 };
 
 #[tokio::test]
@@ -21,6 +24,9 @@ async fn valid_token_creates_the_authenticated_user_and_normalizes_roles() {
     let server = JwksServer::start("active-key").await;
     let config = security_config(&server).await;
     let mut claims = TestClaims::valid();
+    claims.realm_access = Some(json!({
+        "roles": [" role_administrador", "coordenador", "RECEPCAO"]
+    }));
     claims.role = Some(json!(" role_administrador, coordenador "));
     claims.roles = Some(json!(["ROLE_COORDENADOR", "RECEPCAO, administrador"]));
     let token = rsa_token("active-key", &claims);
@@ -39,10 +45,31 @@ async fn valid_token_creates_the_authenticated_user_and_normalizes_roles() {
 
     assert_eq!(StatusCode::OK, status);
     assert_eq!(test_support::SUBJECT, body["subject"]);
-    assert_eq!(AUDIENCE, body["clientId"]);
+    assert_eq!(AUTHORIZED_PARTY, body["clientId"]);
     assert_eq!(true, body["administrator"]);
     assert_eq!(true, body["coordenador"]);
     assert_eq!(true, body["recepcao"]);
+}
+
+#[tokio::test]
+async fn validator_accepts_the_generic_audience_as_string_or_list() {
+    let server = JwksServer::start("active-key").await;
+    let config = security_config(&server).await;
+
+    for audience in [
+        json!(test_support::AUDIENCE),
+        json!([test_support::AUDIENCE]),
+    ] {
+        let mut claims = TestClaims::valid();
+        claims.aud = audience;
+        let token = rsa_token("active-key", &claims);
+        let response = authenticated_router(&config)
+            .oneshot(authenticated_request(&token))
+            .await
+            .expect("a requisição autenticada deve ser processada");
+
+        assert_eq!(StatusCode::OK, response.status());
+    }
 }
 
 #[tokio::test]
@@ -57,7 +84,7 @@ async fn validator_rejects_wrong_issuer_audience_expiration_and_not_before() {
     cases.push(wrong_issuer);
 
     let mut wrong_audience = TestClaims::valid();
-    wrong_audience.aud = "another-client".to_owned();
+    wrong_audience.aud = json!(["another-client"]);
     cases.push(wrong_audience);
 
     let mut expired = TestClaims::valid();
@@ -81,6 +108,32 @@ async fn validator_rejects_wrong_issuer_audience_expiration_and_not_before() {
 
         assert_eq!(StatusCode::UNAUTHORIZED, response.status());
     }
+}
+
+#[tokio::test]
+async fn legacy_client_and_role_claims_remain_supported() {
+    let server = JwksServer::start("active-key").await;
+    let config = security_config(&server).await;
+    let mut claims = TestClaims::valid();
+    claims.azp = None;
+    claims.client_id = Some("legacy-client".to_owned());
+    claims.realm_access = None;
+    claims.role = Some(json!("ROLE_ADMINISTRADOR"));
+    let token = rsa_token("active-key", &claims);
+    let response = authenticated_router(&config)
+        .oneshot(authenticated_request(&token))
+        .await
+        .expect("a requisição com claims legados deve ser processada");
+    let body = response
+        .into_body()
+        .collect()
+        .await
+        .expect("o body deve ser lido")
+        .to_bytes();
+    let body: Value = serde_json::from_slice(&body).expect("o body deve ser JSON");
+
+    assert_eq!("legacy-client", body["clientId"]);
+    assert_eq!(true, body["administrator"]);
 }
 
 #[tokio::test]

@@ -37,8 +37,8 @@ pub struct SecuritySettings {
 impl SecuritySettings {
     pub fn from_env() -> Result<Self, SecurityConfigError> {
         EnvironmentConfig::load()?;
-        let auth_server_url = EnvironmentConfig::required("AUTH_SERVER_URL")?;
-        let issuer = env::var("JWT_ISSUER").unwrap_or_else(|_| auth_server_url.clone());
+        let jwks_url = EnvironmentConfig::required("KEYCLOAK_ISSUER")?;
+        let issuer = EnvironmentConfig::required("JWT_ISSUER")?;
         let audience = env::var("JWT_AUDIENCE").unwrap_or_else(|_| DEFAULT_AUDIENCE.to_owned());
         let cache_ttl = EnvironmentConfig::positive_duration_seconds(
             "JWKS_CACHE_TTL_SECONDS",
@@ -57,40 +57,37 @@ impl SecuritySettings {
             DEFAULT_REQUEST_TIMEOUT_SECONDS,
         )?;
 
-        Self::new(auth_server_url, issuer, audience)?
+        Self::new(jwks_url, issuer, audience)?
             .with_cache_policy(cache_ttl, minimum_refresh_interval)
             .with_http_timeouts(connect_timeout, request_timeout)
     }
 
     pub fn new(
-        auth_server_url: impl AsRef<str>,
+        jwks_url: impl AsRef<str>,
         issuer: impl Into<String>,
         audience: impl Into<String>,
     ) -> Result<Self, SecurityConfigError> {
-        let auth_server_url = normalize_base_url(auth_server_url.as_ref())?;
+        let jwks_url = normalize_required("KEYCLOAK_ISSUER", jwks_url.as_ref())?;
         let issuer = normalize_required("JWT_ISSUER", &issuer.into())?;
         let audience = normalize_required("JWT_AUDIENCE", &audience.into())?;
-        let mut base_url = Url::parse(&auth_server_url)
-            .map_err(|error| SecurityConfigError::with_source("AUTH_SERVER_URL inválida", error))?;
+        let jwks_url = Url::parse(&jwks_url)
+            .map_err(|error| SecurityConfigError::with_source("KEYCLOAK_ISSUER inválida", error))?;
 
-        if !matches!(base_url.scheme(), "http" | "https") || base_url.host_str().is_none() {
+        if !matches!(jwks_url.scheme(), "http" | "https") || jwks_url.host_str().is_none() {
             return Err(SecurityConfigError::new(
-                "AUTH_SERVER_URL deve usar HTTP ou HTTPS e possuir host",
+                "KEYCLOAK_ISSUER deve usar HTTP ou HTTPS e possuir host",
             ));
         }
 
-        if !base_url.username().is_empty() || base_url.password().is_some() {
+        if !jwks_url.username().is_empty()
+            || jwks_url.password().is_some()
+            || jwks_url.query().is_some()
+            || jwks_url.fragment().is_some()
+        {
             return Err(SecurityConfigError::new(
-                "AUTH_SERVER_URL não deve conter usuário ou senha",
+                "KEYCLOAK_ISSUER não deve conter credenciais, query ou fragmento",
             ));
         }
-
-        base_url.set_path("/");
-        base_url.set_query(None);
-        base_url.set_fragment(None);
-        let jwks_url = base_url.join("oauth2/jwks").map_err(|error| {
-            SecurityConfigError::with_source("Não foi possível montar a URL JWKS", error)
-        })?;
 
         Ok(Self {
             jwks_url,
@@ -242,8 +239,4 @@ fn normalize_required(name: &str, value: &str) -> Result<String, SecurityConfigE
     }
 
     Ok(value.to_owned())
-}
-
-fn normalize_base_url(value: &str) -> Result<String, SecurityConfigError> {
-    normalize_required("AUTH_SERVER_URL", value).map(|value| value.trim_end_matches('/').to_owned())
 }

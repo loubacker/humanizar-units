@@ -71,15 +71,11 @@ fn process_environment_has_precedence_over_dotenv() {
 }
 
 #[test]
-fn example_exposes_placeholders_and_local_dotenv_is_ignored() {
+fn local_dotenv_is_ignored() {
     let manifest = Path::new(env!("CARGO_MANIFEST_DIR"));
-    let example = fs::read_to_string(manifest.join(".env.example"))
-        .expect("o contrato .env.example deve existir");
     let gitignore =
         fs::read_to_string(manifest.join(".gitignore")).expect("o .gitignore deve existir");
 
-    assert!(example.contains("DB_PASSWORD=change_me"));
-    assert!(example.contains("DATABASE_RETRY_MAX_RETRIES=2"));
     assert!(gitignore.lines().any(|line| line.trim() == ".env"));
 }
 

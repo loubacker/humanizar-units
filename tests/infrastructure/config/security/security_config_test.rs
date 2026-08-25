@@ -1,3 +1,5 @@
+#![forbid(unsafe_code)]
+
 #[path = "../../security/test_support.rs"]
 mod test_support;
 
@@ -10,14 +12,12 @@ use tokio::net::TcpListener;
 use test_support::{AUDIENCE, ISSUER, JwksServer};
 
 #[test]
-fn settings_derive_the_jwks_url_and_preserve_identity_contracts() {
-    let settings = SecuritySettings::new("https://auth.humanizar.test/", ISSUER, AUDIENCE)
+fn settings_use_the_complete_jwks_url_and_preserve_identity_contracts() {
+    let jwks_url = "https://auth.humanizar.test/realms/humanizar/protocol/openid-connect/certs";
+    let settings = SecuritySettings::new(jwks_url, ISSUER, AUDIENCE)
         .expect("as configurações devem ser válidas");
 
-    assert_eq!(
-        "https://auth.humanizar.test/oauth2/jwks",
-        settings.jwks_url().as_str()
-    );
+    assert_eq!(jwks_url, settings.jwks_url().as_str());
     assert_eq!(ISSUER, settings.issuer());
     assert_eq!(AUDIENCE, settings.audience());
 }
@@ -26,30 +26,41 @@ fn settings_derive_the_jwks_url_and_preserve_identity_contracts() {
 fn settings_reject_invalid_or_empty_values() {
     assert!(SecuritySettings::new("", ISSUER, AUDIENCE).is_err());
     assert!(SecuritySettings::new("file:///tmp/auth", ISSUER, AUDIENCE).is_err());
-    assert!(SecuritySettings::new("https://auth.test", "", AUDIENCE).is_err());
-    assert!(SecuritySettings::new("https://auth.test", ISSUER, "").is_err());
+    assert!(SecuritySettings::new("https://auth.test/certs", "", AUDIENCE).is_err());
+    assert!(SecuritySettings::new("https://auth.test/certs", ISSUER, "").is_err());
 }
 
 #[test]
-fn settings_reject_credentials_embedded_in_the_auth_server_url() {
+fn settings_reject_credentials_query_and_fragment_in_the_jwks_url() {
     let error = SecuritySettings::new(
-        "https://cliente:super-secreta@auth.humanizar.test",
+        "https://cliente:super-secreta@auth.humanizar.test/certs",
         ISSUER,
         AUDIENCE,
     )
     .expect_err("credenciais na URL devem ser rejeitadas");
 
     assert_eq!(
-        "AUTH_SERVER_URL não deve conter usuário ou senha",
+        "KEYCLOAK_ISSUER não deve conter credenciais, query ou fragmento",
         error.to_string()
     );
     assert!(!error.to_string().contains("super-secreta"));
+    assert!(
+        SecuritySettings::new(
+            "https://auth.humanizar.test/certs?tenant=1",
+            ISSUER,
+            AUDIENCE
+        )
+        .is_err()
+    );
+    assert!(
+        SecuritySettings::new("https://auth.humanizar.test/certs#keys", ISSUER, AUDIENCE).is_err()
+    );
 }
 
 #[test]
 fn settings_reject_invalid_http_timeouts() {
     let settings = || {
-        SecuritySettings::new("https://auth.humanizar.test", ISSUER, AUDIENCE)
+        SecuritySettings::new("https://auth.humanizar.test/certs", ISSUER, AUDIENCE)
             .expect("as configurações base devem ser válidas")
     };
 
@@ -84,7 +95,8 @@ async fn startup_failure_reports_the_jwks_endpoint_and_the_technical_cause() {
         .local_addr()
         .expect("a porta deve possuir endereço");
     drop(listener);
-    let settings = SecuritySettings::new(format!("http://{address}"), ISSUER, AUDIENCE)
+    let jwks_url = format!("http://{address}/realms/humanizar/protocol/openid-connect/certs");
+    let settings = SecuritySettings::new(&jwks_url, ISSUER, AUDIENCE)
         .expect("as configurações devem ser válidas")
         .with_cache_policy(Duration::from_secs(60), Duration::from_secs(1));
 
@@ -95,12 +107,12 @@ async fn startup_failure_reports_the_jwks_endpoint_and_the_technical_cause() {
     let report = StartupReport::failure(&error);
 
     assert_eq!(
-        format!("Falha ao inicializar o cache JWKS em http://{address}/oauth2/jwks"),
+        format!("Falha ao inicializar o cache JWKS em {jwks_url}"),
         error.to_string()
     );
     assert!(report.starts_with("Falha ao iniciar humanizar-units: "));
     assert!(report.contains(&format!(
-        "\n  causa 1: Falha ao consultar o JWKS em http://{address}/oauth2/jwks"
+        "\n  causa 1: Falha ao consultar o JWKS em {jwks_url}"
     )));
 }
 
@@ -119,7 +131,8 @@ async fn startup_gives_up_when_the_auth_server_never_answers() {
             accepted.push(connection);
         }
     });
-    let settings = SecuritySettings::new(format!("http://{address}"), ISSUER, AUDIENCE)
+    let jwks_url = format!("http://{address}/realms/humanizar/protocol/openid-connect/certs");
+    let settings = SecuritySettings::new(&jwks_url, ISSUER, AUDIENCE)
         .expect("as configurações devem ser válidas")
         .with_http_timeouts(Duration::from_millis(200), Duration::from_millis(400))
         .expect("os timeouts devem ser válidos");
@@ -137,7 +150,7 @@ async fn startup_gives_up_when_the_auth_server_never_answers() {
         "o startup deve desistir pelo timeout configurado, mas levou {elapsed:?}"
     );
     assert_eq!(
-        format!("Falha ao inicializar o cache JWKS em http://{address}/oauth2/jwks"),
+        format!("Falha ao inicializar o cache JWKS em {jwks_url}"),
         error.to_string()
     );
 }
@@ -145,7 +158,7 @@ async fn startup_gives_up_when_the_auth_server_never_answers() {
 #[tokio::test]
 async fn startup_loads_the_jwks_once() {
     let server = JwksServer::start("startup-key").await;
-    let settings = SecuritySettings::new(server.base_url(), ISSUER, AUDIENCE)
+    let settings = SecuritySettings::new(server.jwks_url(), ISSUER, AUDIENCE)
         .expect("as configurações devem ser válidas");
 
     SecurityConfig::initialize(settings)

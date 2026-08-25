@@ -73,11 +73,11 @@ As respostas de sucesso permanecem diretas para compatibilidade com os consumido
 - Autenticação stateless exclusivamente por `Authorization: Bearer <jwt>`.
 - Tokens aceitos somente com assinatura RSA e algoritmo `RS256`.
 - Validação de `kid`, assinatura, `exp`, `nbf`, `iss`, `aud` e `sub`.
-- JWKS carregado de `${AUTH_SERVER_URL}/oauth2/jwks` durante o startup.
-- `AUTH_SERVER_URL` não pode conter usuário ou senha embutidos.
+- JWKS carregado diretamente da URL completa configurada em `KEYCLOAK_ISSUER` durante o startup; nenhum sufixo é acrescentado.
+- `KEYCLOAK_ISSUER` não pode conter credenciais, query ou fragmento.
 - Consulta JWKS com timeout de conexão e de resposta explícitos, no startup e nas atualizações.
 - Cache JWKS concorrente com atualização controlada para rotação de chaves.
-- Claims `role` e `roles` normalizadas com ou sem o prefixo `ROLE_`.
+- Claims Keycloak `azp` e `realm_access.roles` são consumidas nativamente; `client_id`, `role` e `roles` permanecem compatíveis com tokens legados.
 - Leituras exigem usuário autenticado; escritas exigem `ADMINISTRADOR`.
 - Respostas `401` usam `AUTHENTICATION_FAILURE` e respostas `403` usam `AUTHORIZATION_FAILURE`.
 - Bearer token, credenciais, senha e conteúdo completo do JWT não são registrados em log.
@@ -137,8 +137,8 @@ Falha ao iniciar humanizar-units: Falha ao inicializar o pool PostgreSQL em post
 ```
 
 ```text
-Falha ao iniciar humanizar-units: Falha ao inicializar o cache JWKS em http://auth:9091/oauth2/jwks
-  causa 1: Falha ao consultar o JWKS em http://auth:9091/oauth2/jwks
+Falha ao iniciar humanizar-units: Falha ao inicializar o cache JWKS em https://<keycloak-host>/realms/<realm>/protocol/openid-connect/certs
+  causa 1: Falha ao consultar o JWKS em https://<keycloak-host>/realms/<realm>/protocol/openid-connect/certs
   causa 2: error sending request
   causa 3: operation timed out
 ```
@@ -195,19 +195,23 @@ O projeto não utiliza `mod.rs`. Os módulos públicos de primeiro nível são o
 
 - Rust `1.98+` com Cargo.
 - PostgreSQL acessível pela aplicação.
-- Auth Server com endpoint JWKS disponível.
+- Keycloak com endpoint JWKS disponível.
 
 O serviço não cria tabelas nem executa migrations automaticamente. Antes do startup, o schema deve conter `public.municipio` e `public.units`, com `units.municipio_id` referenciando `municipio.id`.
 
 ### Variáveis de Ambiente (`.env`)
 
-O contrato completo, com placeholders e sem segredos, está em `.env.example`. O `.env` local é ignorado pelo Git.
+O `.env` local é ignorado pelo Git. Para autenticação, configure:
 
 ```env
-DB_URL=postgresql://localhost:5432/db
-DB_USERNAME=postgres
-DB_PASSWORD=secret
+KEYCLOAK_ISSUER=<url-jwks-completa>
+JWT_ISSUER=<issuer-exato-do-realm>
+JWT_AUDIENCE=humanizar-client
 ```
+
+`KEYCLOAK_ISSUER` recebe o endpoint completo de certificados, incluindo
+`/protocol/openid-connect/certs`. `JWT_ISSUER` recebe o issuer exato do realm e
+`JWT_AUDIENCE` permanece genérico como `humanizar-client`.
 
 `DB_URL` não aceita usuário nem senha embutidos: as credenciais chegam apenas por `DB_USERNAME` e `DB_PASSWORD`.
 
