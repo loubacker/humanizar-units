@@ -29,9 +29,24 @@ impl UnitRepository {
         let connection = self.database.acquire().await?;
         let rows = connection
             .query(
-                "SELECT id, municipio_id, unit_name, razao_social, endereco, numero, \
-                 complemento, bairro, cep, cnpj, created_at, updated_at \
-                 FROM public.units WHERE municipio_id = $1 ORDER BY unit_name, id",
+                r#"
+                    SELECT
+                        id,
+                        municipio_id,
+                        unit_name,
+                        razao_social,
+                        endereco,
+                        numero,
+                        complemento,
+                        bairro,
+                        cep,
+                        cnpj,
+                        created_at,
+                        updated_at
+                    FROM public.units
+                    WHERE municipio_id = $1
+                    ORDER BY unit_name, id
+                "#,
                 &[&municipio_id],
             )
             .await
@@ -48,9 +63,24 @@ impl UnitRepository {
         let connection = self.database.acquire().await?;
         let row = connection
             .query_opt(
-                "SELECT id, municipio_id, unit_name, razao_social, endereco, numero, \
-                 complemento, bairro, cep, cnpj, created_at, updated_at \
-                 FROM public.units WHERE id = $1 AND municipio_id = $2",
+                r#"
+                    SELECT
+                        id,
+                        municipio_id,
+                        unit_name,
+                        razao_social,
+                        endereco,
+                        numero,
+                        complemento,
+                        bairro,
+                        cep,
+                        cnpj,
+                        created_at,
+                        updated_at
+                    FROM public.units
+                    WHERE id = $1
+                      AND municipio_id = $2
+                "#,
                 &[&unit_id, &municipio_id],
             )
             .await
@@ -70,9 +100,24 @@ impl UnitRepository {
         let connection = self.database.acquire().await?;
         let row = connection
             .query_opt(
-                "SELECT id, municipio_id, unit_name, razao_social, endereco, numero, \
-                 complemento, bairro, cep, cnpj, created_at, updated_at \
-                 FROM public.units WHERE municipio_id = $1 AND cnpj = $2",
+                r#"
+                    SELECT
+                        id,
+                        municipio_id,
+                        unit_name,
+                        razao_social,
+                        endereco,
+                        numero,
+                        complemento,
+                        bairro,
+                        cep,
+                        cnpj,
+                        created_at,
+                        updated_at
+                    FROM public.units
+                    WHERE municipio_id = $1
+                      AND cnpj = $2
+                "#,
                 &[&municipio_id, &cnpj],
             )
             .await
@@ -96,9 +141,24 @@ impl UnitRepository {
         let unit_ids = unit_ids.to_vec();
         let rows = connection
             .query(
-                "SELECT id, municipio_id, unit_name, razao_social, endereco, numero, \
-                 complemento, bairro, cep, cnpj, created_at, updated_at \
-                 FROM public.units WHERE id = ANY($1) ORDER BY unit_name, id",
+                r#"
+                    SELECT
+                        id,
+                        municipio_id,
+                        unit_name,
+                        razao_social,
+                        endereco,
+                        numero,
+                        complemento,
+                        bairro,
+                        cep,
+                        cnpj,
+                        created_at,
+                        updated_at
+                    FROM public.units
+                    WHERE id = ANY($1)
+                    ORDER BY unit_name, id
+                "#,
                 &[&unit_ids],
             )
             .await
@@ -147,13 +207,49 @@ impl UnitRepository {
         let complemento = unit.complemento.as_deref();
         let row = connection
             .query_one(
-                "INSERT INTO public.units \
-                 (id, municipio_id, unit_name, razao_social, endereco, numero, complemento, \
-                  bairro, cep, cnpj, created_at, updated_at) \
-                 VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, \
-                         CURRENT_TIMESTAMP, CURRENT_TIMESTAMP) \
-                 RETURNING id, municipio_id, unit_name, razao_social, endereco, numero, \
-                           complemento, bairro, cep, cnpj, created_at, updated_at",
+                r#"
+                    INSERT INTO public.units (
+                        id,
+                        municipio_id,
+                        unit_name,
+                        razao_social,
+                        endereco,
+                        numero,
+                        complemento,
+                        bairro,
+                        cep,
+                        cnpj,
+                        created_at,
+                        updated_at
+                    )
+                    VALUES (
+                        $1,
+                        $2,
+                        $3,
+                        $4,
+                        $5,
+                        $6,
+                        $7,
+                        $8,
+                        $9,
+                        $10,
+                        CURRENT_TIMESTAMP,
+                        CURRENT_TIMESTAMP
+                    )
+                    RETURNING
+                        id,
+                        municipio_id,
+                        unit_name,
+                        razao_social,
+                        endereco,
+                        numero,
+                        complemento,
+                        bairro,
+                        cep,
+                        cnpj,
+                        created_at,
+                        updated_at
+                "#,
                 &[
                     &unit_id,
                     &unit.municipio_id,
@@ -182,13 +278,34 @@ impl UnitRepository {
         let complemento = unit.complemento.as_deref();
         let row = connection
             .query_opt(
-                "UPDATE public.units SET \
-                 municipio_id = $2, unit_name = $3, razao_social = $4, endereco = $5, \
-                 numero = $6, complemento = $7, bairro = $8, cep = $9, cnpj = $10, \
-                 updated_at = CURRENT_TIMESTAMP \
-                 WHERE id = $1 \
-                 RETURNING id, municipio_id, unit_name, razao_social, endereco, numero, \
-                           complemento, bairro, cep, cnpj, created_at, updated_at",
+                r#"
+                    UPDATE public.units
+                    SET
+                        municipio_id = $2,
+                        unit_name = $3,
+                        razao_social = $4,
+                        endereco = $5,
+                        numero = $6,
+                        complemento = $7,
+                        bairro = $8,
+                        cep = $9,
+                        cnpj = $10,
+                        updated_at = CURRENT_TIMESTAMP
+                    WHERE id = $1
+                    RETURNING
+                        id,
+                        municipio_id,
+                        unit_name,
+                        razao_social,
+                        endereco,
+                        numero,
+                        complemento,
+                        bairro,
+                        cep,
+                        cnpj,
+                        created_at,
+                        updated_at
+                "#,
                 &[
                     &unit_id,
                     &unit.municipio_id,

@@ -19,8 +19,7 @@ RUN apt-get update \
 
 COPY --from=builder --chown=appuser:appgroup /app/target/release/humanizar-units /app/humanizar-units
 
-ENV APP_ENV=production \
-    SERVER_HOST=0.0.0.0 \
+ENV SERVER_HOST=0.0.0.0 \
     SERVER_PORT=9095
 
 EXPOSE 9095

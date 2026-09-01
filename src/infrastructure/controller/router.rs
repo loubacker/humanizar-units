@@ -4,18 +4,14 @@ use axum::routing::{delete, get, post, put};
 use tower_http::trace::{DefaultMakeSpan, DefaultOnResponse, TraceLayer};
 use tracing::Level;
 
-use crate::infrastructure::config::{CorsConfig, SecurityConfig};
+use crate::infrastructure::config::SecurityConfig;
 
 use super::health_controller;
-use super::municipio_controller;
+use super::municipio::municipio_controller;
 use super::state::ApplicationState;
-use super::unit_controller;
+use super::unit::unit_controller;
 
-pub fn create_router(
-    state: ApplicationState,
-    security: &SecurityConfig,
-    cors: &CorsConfig,
-) -> Router {
+pub fn create_router(state: ApplicationState, security: &SecurityConfig) -> Router {
     let public_routes = Router::new().route("/health", get(health_controller::health));
     let authenticated_routes = security.protect_authenticated(
         Router::new()
@@ -59,7 +55,7 @@ pub fn create_router(
             )
             .with_state(state),
     );
-    let router = public_routes
+    public_routes
         .merge(authenticated_routes)
         .merge(administrator_routes)
         .fallback(StatusCode::NOT_FOUND)
@@ -71,7 +67,5 @@ pub fn create_router(
                         .include_headers(false),
                 )
                 .on_response(DefaultOnResponse::new().level(Level::INFO)),
-        );
-
-    cors.apply(router)
+        )
 }

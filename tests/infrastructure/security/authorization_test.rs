@@ -4,11 +4,10 @@ mod test_support;
 
 use axum::Router;
 use axum::body::Body;
-use axum::http::header::{ACCESS_CONTROL_ALLOW_ORIGIN, AUTHORIZATION, ORIGIN};
+use axum::http::header::AUTHORIZATION;
 use axum::http::{Method, Request, StatusCode};
 use axum::routing::{get, post};
 use http_body_util::BodyExt;
-use humanizar_units::infrastructure::config::CorsConfig;
 use serde_json::{Value, json};
 use tower::ServiceExt;
 
@@ -60,17 +59,17 @@ async fn authenticated_reads_and_administrator_writes_are_explicitly_separated()
 async fn security_returns_shared_error_contract_with_path_and_reason_code() {
     let server = JwksServer::start("active-key").await;
     let security = security_config(&server).await;
-    let app = CorsConfig::development().apply(application_router(&security));
+    let app = application_router(&security);
     let unauthorized = app
         .clone()
-        .oneshot(cors_request(Method::GET, "/api/v1/units", None))
+        .oneshot(request(Method::GET, "/api/v1/units", None))
         .await
         .expect("a resposta 401 deve ser processada");
     let mut user_claims = TestClaims::valid();
     user_claims.realm_access = Some(json!({ "roles": ["COORDENADOR"] }));
     let token = rsa_token("active-key", &user_claims);
     let forbidden = app
-        .oneshot(cors_request(Method::POST, "/api/v1/units", Some(&token)))
+        .oneshot(request(Method::POST, "/api/v1/units", Some(&token)))
         .await
         .expect("a resposta 403 deve ser processada");
 
@@ -126,28 +125,12 @@ fn request(method: Method, path: &str, token: Option<&str>) -> Request<Body> {
         .expect("a requisição deve ser válida")
 }
 
-fn cors_request(method: Method, path: &str, token: Option<&str>) -> Request<Body> {
-    let mut request = request(method, path, token);
-    request.headers_mut().insert(
-        ORIGIN,
-        "http://localhost:3000".parse().expect("origem válida"),
-    );
-    request
-}
-
 async fn assert_error(
     response: axum::response::Response,
     expected_status: StatusCode,
     expected_reason_code: &str,
 ) {
     assert_eq!(expected_status, response.status());
-    assert_eq!(
-        "http://localhost:3000",
-        response
-            .headers()
-            .get(ACCESS_CONTROL_ALLOW_ORIGIN)
-            .expect("o erro deve preservar CORS")
-    );
     let body = response
         .into_body()
         .collect()

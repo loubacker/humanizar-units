@@ -92,14 +92,12 @@ pub mod infrastructure {
     }
 
     pub mod config {
-        mod cors_config;
         mod database_config;
         mod environment_config;
         mod retry_config;
         mod security_config;
         mod server_config;
 
-        pub use cors_config::{ApplicationEnvironment, CorsConfig, CorsConfigError};
         pub use database_config::{DatabaseConfig, DatabaseConfigError, DatabaseSettings};
         pub use environment_config::{EnvironmentConfig, EnvironmentConfigError};
         pub use retry_config::{RetryConfig, RetryConfigError, RetrySettings};
@@ -129,11 +127,15 @@ pub mod infrastructure {
         }
 
         mod health_controller;
-        mod municipio_controller;
+        mod municipio {
+            pub(super) mod municipio_controller;
+        }
         mod result_ext;
         mod router;
         mod state;
-        mod unit_controller;
+        mod unit {
+            pub(super) mod unit_controller;
+        }
 
         pub use router::create_router;
         pub use state::ApplicationState;

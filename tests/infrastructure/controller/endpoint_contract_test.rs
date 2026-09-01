@@ -4,12 +4,11 @@ use std::sync::Arc;
 
 use axum::Router;
 use axum::body::Body;
-use axum::http::header::{ACCESS_CONTROL_ALLOW_ORIGIN, AUTHORIZATION, CONTENT_TYPE, ORIGIN};
+use axum::http::header::{AUTHORIZATION, CONTENT_TYPE};
 use axum::http::{Method, Request, Response, StatusCode};
 use http_body_util::BodyExt;
 use humanizar_units::application::service::{MunicipioService, UnitService};
 use humanizar_units::domain::port::{MunicipioPort, UnitPort};
-use humanizar_units::infrastructure::config::CorsConfig;
 use humanizar_units::infrastructure::controller::{ApplicationState, create_router};
 use serde_json::{Value, json};
 use tower::ServiceExt;
@@ -323,40 +322,6 @@ async fn transport_rejections_and_unknown_routes_keep_the_shared_contract() {
     assert!(text_body(unknown).await.is_empty());
 }
 
-#[tokio::test]
-async fn cors_headers_are_present_on_preflight_and_security_errors() {
-    let jwks = JwksServer::start("active-key").await;
-    let security = security_config(&jwks).await;
-    let app = test_router(Arc::new(InMemoryPorts::default()), &security);
-    let unauthorized = call(&app, request(Method::GET, "/api/v1/municipio", None, None)).await;
-    assert_eq!(StatusCode::UNAUTHORIZED, unauthorized.status());
-    assert_eq!(
-        "http://localhost:3000",
-        unauthorized
-            .headers()
-            .get(ACCESS_CONTROL_ALLOW_ORIGIN)
-            .expect("o erro deve possuir header CORS")
-    );
-
-    let preflight = call(
-        &app,
-        Request::builder()
-            .method(Method::OPTIONS)
-            .uri("/api/v1/municipio/register")
-            .header(ORIGIN, "http://localhost:3000")
-            .header("access-control-request-method", "POST")
-            .body(Body::empty())
-            .expect("a requisicao deve ser criada"),
-    )
-    .await;
-    assert_eq!(StatusCode::OK, preflight.status());
-    assert!(
-        preflight
-            .headers()
-            .contains_key(ACCESS_CONTROL_ALLOW_ORIGIN)
-    );
-}
-
 fn test_router(
     ports: Arc<InMemoryPorts>,
     security: &humanizar_units::infrastructure::config::SecurityConfig,
@@ -370,7 +335,7 @@ fn test_router(
     let unit_service = Arc::new(UnitService::new(unit_port, municipio_port));
     let state = ApplicationState::new(municipio_service, unit_service);
 
-    create_router(state, security, &CorsConfig::development())
+    create_router(state, security)
 }
 
 fn coordinator_token() -> String {
@@ -386,10 +351,7 @@ fn prefixed_administrator_token() -> String {
 }
 
 fn request(method: Method, uri: &str, token: Option<&str>, body: Option<Value>) -> Request<Body> {
-    let mut builder = Request::builder()
-        .method(method)
-        .uri(uri)
-        .header(ORIGIN, "http://localhost:3000");
+    let mut builder = Request::builder().method(method).uri(uri);
 
     if let Some(token) = token {
         builder = builder.header(AUTHORIZATION, format!("Bearer {token}"));

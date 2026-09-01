@@ -24,7 +24,7 @@ Serviço REST síncrono responsável pelo CRUD de municípios e unidades. A impl
 - Pool assíncrono com `bb8-postgres`, fila FIFO e validação da conexão no checkout.
 - Retry assíncrono somente para leituras idempotentes, com BackON e classificação explícita de falhas PostgreSQL.
 - Erros de domínio modelados por `ReasonCode` e transportados pelo handler HTTP genérico.
-- CORS, autenticação e autorização aplicados por composição de routers do Axum.
+- Autenticação e autorização aplicadas por composição de routers do Axum.
 - Graceful shutdown para `SIGTERM` e `Ctrl+C`.
 - Código próprio protegido por `#![forbid(unsafe_code)]`, sem FFI ou bindings nativos.
 
@@ -123,7 +123,7 @@ Erros `4xx` são registrados como `warn`; erros `5xx`, como `error`. A causa té
 
 O bootstrap é executado em etapas ordenadas, e cada etapa registra o destino configurado antes de tentar usá-lo:
 
-1. Configuração de ambiente, servidor, CORS e retry.
+1. Configuração de ambiente, servidor e retry.
 2. Pool PostgreSQL, com `banco`, `usuario`, tamanhos e timeout de conexão.
 3. Cache JWKS, com `jwks`, `emissor`, `audiencia` e timeouts HTTP.
 4. Listener HTTP, com `host` e `port`.
@@ -169,7 +169,7 @@ src/
 |   `-- port/                      # UnitPort e MunicipioPort
 `-- infrastructure/
 |   |-- adapter/                   # implementação dos ports
-|   |-- config/                    # ambiente, servidor, CORS, JWT, pool e retry
+|   |-- config/                    # ambiente, servidor, JWT, pool e retry
 |   |-- controller/                # controllers, extractors, DTOs HTTP e router
 |   |-- diagnostics/               # URL sanitizada e relatório de falha de startup
 |   |-- handler/                   # classificação de erros PostgreSQL

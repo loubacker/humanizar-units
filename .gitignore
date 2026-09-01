@@ -3,4 +3,4 @@
 .env
 /.db/
 
-tests/infrastructure/security/fixtures/test_private_key.pem
+*.pem

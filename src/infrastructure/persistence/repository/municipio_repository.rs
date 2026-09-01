@@ -29,8 +29,17 @@ impl MunicipioRepository {
         let connection = self.database.acquire().await?;
         let rows = connection
             .query(
-                "SELECT id, codigo_ibge, nome, uf, created_at, updated_at \
-                 FROM public.municipio ORDER BY nome, id",
+                r#"
+                    SELECT
+                        id,
+                        codigo_ibge,
+                        nome,
+                        uf,
+                        created_at,
+                        updated_at
+                    FROM public.municipio
+                    ORDER BY nome, id
+                "#,
                 &[],
             )
             .await
@@ -46,8 +55,17 @@ impl MunicipioRepository {
         let connection = self.database.acquire().await?;
         let row = connection
             .query_opt(
-                "SELECT id, codigo_ibge, nome, uf, created_at, updated_at \
-                 FROM public.municipio WHERE id = $1",
+                r#"
+                    SELECT
+                        id,
+                        codigo_ibge,
+                        nome,
+                        uf,
+                        created_at,
+                        updated_at
+                    FROM public.municipio
+                    WHERE id = $1
+                "#,
                 &[&municipio_id],
             )
             .await
@@ -66,8 +84,17 @@ impl MunicipioRepository {
         let connection = self.database.acquire().await?;
         let row = connection
             .query_opt(
-                "SELECT id, codigo_ibge, nome, uf, created_at, updated_at \
-                 FROM public.municipio WHERE codigo_ibge = $1",
+                r#"
+                    SELECT
+                        id,
+                        codigo_ibge,
+                        nome,
+                        uf,
+                        created_at,
+                        updated_at
+                    FROM public.municipio
+                    WHERE codigo_ibge = $1
+                "#,
                 &[&codigo_ibge],
             )
             .await
@@ -100,10 +127,31 @@ impl MunicipioRepository {
         let municipio_id = Uuid::new_v4();
         let row = connection
             .query_one(
-                "INSERT INTO public.municipio \
-                 (id, codigo_ibge, nome, uf, created_at, updated_at) \
-                 VALUES ($1, $2, $3, $4, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP) \
-                 RETURNING id, codigo_ibge, nome, uf, created_at, updated_at",
+                r#"
+                    INSERT INTO public.municipio (
+                        id,
+                        codigo_ibge,
+                        nome,
+                        uf,
+                        created_at,
+                        updated_at
+                    )
+                    VALUES (
+                        $1,
+                        $2,
+                        $3,
+                        $4,
+                        CURRENT_TIMESTAMP,
+                        CURRENT_TIMESTAMP
+                    )
+                    RETURNING
+                        id,
+                        codigo_ibge,
+                        nome,
+                        uf,
+                        created_at,
+                        updated_at
+                "#,
                 &[
                     &municipio_id,
                     &municipio.codigo_ibge,
@@ -125,10 +173,22 @@ impl MunicipioRepository {
         let connection = self.database.acquire().await?;
         let row = connection
             .query_opt(
-                "UPDATE public.municipio SET \
-                 codigo_ibge = $2, nome = $3, uf = $4, updated_at = CURRENT_TIMESTAMP \
-                 WHERE id = $1 \
-                 RETURNING id, codigo_ibge, nome, uf, created_at, updated_at",
+                r#"
+                    UPDATE public.municipio
+                    SET
+                        codigo_ibge = $2,
+                        nome = $3,
+                        uf = $4,
+                        updated_at = CURRENT_TIMESTAMP
+                    WHERE id = $1
+                    RETURNING
+                        id,
+                        codigo_ibge,
+                        nome,
+                        uf,
+                        created_at,
+                        updated_at
+                "#,
                 &[
                     &municipio_id,
                     &municipio.codigo_ibge,

@@ -10,12 +10,12 @@ use axum::routing::get;
 use axum::{Json, Router};
 use http_body_util::BodyExt;
 use humanizar_units::infrastructure::security::AuthenticatedUser;
-use jsonwebtoken::{Algorithm, EncodingKey, Header, encode};
+use jsonwebtoken::{Algorithm, Header, encode};
 use serde_json::{Value, json};
 use tower::ServiceExt;
 
 use test_support::{
-    AUTHORIZED_PARTY, JwksServer, PRIVATE_KEY_FOR_TESTS, TestClaims, hmac_token, rsa_token,
+    AUTHORIZED_PARTY, JwksServer, TestClaims, encoding_key_for_tests, hmac_token, rsa_token,
     security_config,
 };
 
@@ -144,13 +144,8 @@ async fn validator_rejects_wrong_algorithm_signature_and_missing_key_id() {
     let wrong_algorithm = hmac_token("active-key", &claims);
     let wrong_signature = corrupt_signature(&rsa_token("active-key", &claims));
     let header = Header::new(Algorithm::RS256);
-    let missing_key_id = encode(
-        &header,
-        &claims,
-        &EncodingKey::from_rsa_pem(PRIVATE_KEY_FOR_TESTS)
-            .expect("a chave RSA de teste deve ser válida"),
-    )
-    .expect("o JWT sem kid deve ser criado");
+    let missing_key_id =
+        encode(&header, &claims, &encoding_key_for_tests()).expect("o JWT sem kid deve ser criado");
 
     for token in [wrong_algorithm, wrong_signature, missing_key_id] {
         let response = authenticated_router(&config)

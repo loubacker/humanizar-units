@@ -7,8 +7,7 @@ use crate::domain::exception::TechnicalError;
 use crate::domain::port::{MunicipioPort, UnitPort};
 use crate::infrastructure::adapter::{MunicipioAdapter, UnitAdapter};
 use crate::infrastructure::config::{
-    CorsConfig, DatabaseConfig, DatabaseSettings, RetryConfig, SecurityConfig, SecuritySettings,
-    ServerConfig,
+    DatabaseConfig, DatabaseSettings, RetryConfig, SecurityConfig, SecuritySettings, ServerConfig,
 };
 use crate::infrastructure::controller::{ApplicationState, create_router};
 use crate::infrastructure::persistence::repository::{MunicipioRepository, UnitRepository};
@@ -19,14 +18,13 @@ pub async fn run() -> Result<(), TechnicalError> {
     tracing::info!("Carregando a configuração do humanizar-units");
 
     let server = ServerConfig::from_env()?;
-    let cors = CorsConfig::from_env()?;
     let retry = RetryConfig::from_env()?;
     let database_settings = DatabaseSettings::from_env()?;
     let security_settings = SecuritySettings::from_env()?;
     let database = DatabaseConfig::initialize(database_settings).await?;
     let security = SecurityConfig::initialize(security_settings).await?;
     let state = build_state(database, &retry);
-    let router = create_router(state, &security, &cors);
+    let router = create_router(state, &security);
     let bind_address = server.bind_address();
     let listener = TcpListener::bind(&bind_address)
         .await

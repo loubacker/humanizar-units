@@ -1,6 +1,7 @@
 #![allow(dead_code)]
 
 use std::sync::Arc;
+use std::sync::LazyLock;
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
@@ -13,7 +14,8 @@ use base64::engine::general_purpose::URL_SAFE_NO_PAD;
 use humanizar_units::infrastructure::config::{SecurityConfig, SecuritySettings};
 use jsonwebtoken::{Algorithm, EncodingKey, Header, encode};
 use rsa::RsaPrivateKey;
-use rsa::pkcs1::DecodeRsaPrivateKey;
+use rsa::pkcs1::{EncodeRsaPrivateKey, LineEnding};
+use rsa::rand_core::OsRng;
 use rsa::traits::PublicKeyParts;
 use serde::Serialize;
 use serde_json::{Value, json};
@@ -26,7 +28,10 @@ pub const AUTHORIZED_PARTY: &str = "humanizar-admin-dashboard";
 pub const SUBJECT: &str = "47c713bf-d4e5-45ff-bada-0a2969739667";
 const JWKS_PATH: &str = "/realms/humanizar/protocol/openid-connect/certs";
 
-pub const PRIVATE_KEY_FOR_TESTS: &[u8] = include_bytes!("fixtures/test_private_key.pem");
+static PRIVATE_KEY_FOR_TESTS: LazyLock<RsaPrivateKey> = LazyLock::new(|| {
+    RsaPrivateKey::new(&mut OsRng, 2_048)
+        .expect("a chave RSA privada de teste deve ser gerada em memória")
+});
 
 pub struct JwksServer {
     jwks_url: String,
@@ -147,13 +152,17 @@ pub fn rsa_token(key_id: &str, claims: &TestClaims) -> String {
     let mut header = Header::new(Algorithm::RS256);
     header.kid = Some(key_id.to_owned());
 
-    encode(
-        &header,
-        claims,
-        &EncodingKey::from_rsa_pem(PRIVATE_KEY_FOR_TESTS)
-            .expect("a chave RSA privada de teste deve ser válida"),
-    )
-    .expect("o token RSA de teste deve ser criado")
+    encode(&header, claims, &encoding_key_for_tests())
+        .expect("o token RSA de teste deve ser criado")
+}
+
+pub fn encoding_key_for_tests() -> EncodingKey {
+    let private_key_pem = PRIVATE_KEY_FOR_TESTS
+        .to_pkcs1_pem(LineEnding::LF)
+        .expect("a chave RSA privada de teste deve ser codificada em memória");
+
+    EncodingKey::from_rsa_pem(private_key_pem.as_bytes())
+        .expect("a chave RSA privada de teste deve ser válida")
 }
 
 pub fn hmac_token(key_id: &str, claims: &TestClaims) -> String {
@@ -165,11 +174,7 @@ pub fn hmac_token(key_id: &str, claims: &TestClaims) -> String {
 }
 
 fn jwks(key_id: &str) -> Value {
-    let private_key = RsaPrivateKey::from_pkcs1_pem(
-        std::str::from_utf8(PRIVATE_KEY_FOR_TESTS).expect("a chave RSA deve ser UTF-8"),
-    )
-    .expect("a chave RSA privada de teste deve ser válida");
-    let public_key = private_key.to_public_key();
+    let public_key = PRIVATE_KEY_FOR_TESTS.to_public_key();
     let modulus = URL_SAFE_NO_PAD.encode(public_key.n().to_bytes_be());
     let exponent = URL_SAFE_NO_PAD.encode(public_key.e().to_bytes_be());
 
