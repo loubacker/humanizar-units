@@ -170,14 +170,16 @@ impl SecurityConfig {
 
     pub async fn initialize(settings: SecuritySettings) -> Result<Self, SecurityConfigError> {
         let jwks_endpoint = settings.jwks_endpoint();
+        let issuer_endpoint = sanitized_url_for_log(settings.issuer());
 
         tracing::info!(
+            service = "humanizar-units",
             jwks = %jwks_endpoint,
-            emissor = settings.issuer(),
+            emissor = %issuer_endpoint,
             audiencia = settings.audience(),
             timeout_conexao_segundos = settings.connect_timeout().as_secs(),
             timeout_resposta_segundos = settings.request_timeout().as_secs(),
-            "Carregando o JWKS do auth server"
+            "Carregando o JWKS do Keycloak"
         );
 
         let SecuritySettings {
@@ -203,7 +205,11 @@ impl SecurityConfig {
             )
         })?;
 
-        tracing::info!(jwks = %jwks_endpoint, "JWKS carregado");
+        tracing::info!(
+            service = "humanizar-units",
+            jwks = %jwks_endpoint,
+            "JWKS carregado"
+        );
 
         let validator = JwtValidator::new(jwks_cache, &issuer, &audience);
 
@@ -227,6 +233,14 @@ impl SecurityConfig {
                 authenticate,
             ))
     }
+}
+
+fn sanitized_url_for_log(value: &str) -> String {
+    Url::parse(value)
+        .ok()
+        .filter(|url| matches!(url.scheme(), "http" | "https") && url.host_str().is_some())
+        .map(|url| SafeUrl::from_url(&url).to_string())
+        .unwrap_or_else(|| "<url-invalida>".to_owned())
 }
 
 fn normalize_required(name: &str, value: &str) -> Result<String, SecurityConfigError> {

@@ -171,6 +171,7 @@ impl DatabaseConfig {
         let endpoint = settings.endpoint();
 
         tracing::info!(
+            service = "humanizar-units",
             banco = %endpoint,
             usuario = settings.username(),
             conexoes_minimas = settings.minimum_idle,
@@ -201,7 +202,11 @@ impl DatabaseConfig {
                 )
             })?;
 
-        tracing::info!(banco = %endpoint, "Pool PostgreSQL inicializado");
+        tracing::info!(
+            service = "humanizar-units",
+            banco = %endpoint,
+            "Pool PostgreSQL inicializado"
+        );
 
         Ok(Self { pool })
     }

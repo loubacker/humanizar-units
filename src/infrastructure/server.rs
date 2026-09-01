@@ -15,7 +15,10 @@ use crate::infrastructure::persistence::repository::{MunicipioRepository, UnitRe
 pub async fn run() -> Result<(), TechnicalError> {
     initialize_tracing()?;
 
-    tracing::info!("Carregando a configuração do humanizar-units");
+    tracing::info!(
+        service = "humanizar-units",
+        "Carregando a configuração do humanizar-units"
+    );
 
     let server = ServerConfig::from_env()?;
     let retry = RetryConfig::from_env()?;
@@ -31,8 +34,10 @@ pub async fn run() -> Result<(), TechnicalError> {
         .map_err(|error| TechnicalError::with_source("Falha ao iniciar listener HTTP", error))?;
 
     tracing::info!(
+        service = "humanizar-units",
         host = server.host(),
         port = server.port(),
+        mode = "FULL",
         "Servidor HTTP iniciado"
     );
 

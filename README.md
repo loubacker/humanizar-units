@@ -149,10 +149,10 @@ Toda URL registrada em log ou em mensagem de erro passa por sanitização que de
 
 | Variável | Padrão | Efeito |
 |----------|--------|--------|
-| `JWKS_CONNECT_TIMEOUT_SECONDS` | `5` | Tempo máximo para estabelecer a conexão TCP/TLS com o auth server. |
+| `JWKS_CONNECT_TIMEOUT_SECONDS` | `5` | Tempo máximo para estabelecer a conexão TCP/TLS com o Keycloak. |
 | `JWKS_REQUEST_TIMEOUT_SECONDS` | `10` | Tempo máximo total da requisição JWKS, incluindo a conexão. |
 
-O timeout de conexão não pode superar o timeout de resposta. Sem esses limites, um auth server que aceita a conexão e não responde suspenderia o startup indefinidamente.
+O timeout de conexão não pode superar o timeout de resposta. Sem esses limites, um Keycloak que aceita a conexão e não responde suspenderia o startup indefinidamente.
 
 ## Estrutura do Projeto
 

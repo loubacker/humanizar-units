@@ -59,6 +59,10 @@ name = "startup_diagnostics_test"
 path = "tests/infrastructure/diagnostics/startup_diagnostics_test.rs"
 
 [[test]]
+name = "bootstrap_observability_test"
+path = "tests/infrastructure/diagnostics/bootstrap_observability_test.rs"
+
+[[test]]
 name = "jwt_validator_test"
 path = "tests/infrastructure/security/jwt_validator_test.rs"
 

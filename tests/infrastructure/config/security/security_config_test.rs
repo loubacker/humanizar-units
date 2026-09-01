@@ -117,7 +117,7 @@ async fn startup_failure_reports_the_jwks_endpoint_and_the_technical_cause() {
 }
 
 #[tokio::test]
-async fn startup_gives_up_when_the_auth_server_never_answers() {
+async fn startup_gives_up_when_keycloak_never_answers() {
     let listener = TcpListener::bind("127.0.0.1:0")
         .await
         .expect("uma porta de teste deve ser reservada");
