@@ -123,5 +123,9 @@ name = "endpoint_contract_test"
 path = "tests/infrastructure/controller/endpoint_contract_test.rs"
 
 [[test]]
+name = "http_observability_test"
+path = "tests/infrastructure/controller/http_observability_test.rs"
+
+[[test]]
 name = "server_config_test"
 path = "tests/infrastructure/config/server/server_config_test.rs"

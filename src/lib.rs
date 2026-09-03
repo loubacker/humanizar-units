@@ -127,6 +127,7 @@ pub mod infrastructure {
         }
 
         mod health_controller;
+        mod http_observability;
         mod municipio {
             pub(super) mod municipio_controller;
         }

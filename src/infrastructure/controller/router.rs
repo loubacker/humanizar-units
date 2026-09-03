@@ -1,18 +1,19 @@
 use axum::Router;
 use axum::http::StatusCode;
 use axum::routing::{delete, get, post, put};
-use tower_http::trace::{DefaultMakeSpan, DefaultOnResponse, TraceLayer};
-use tracing::Level;
 
 use crate::infrastructure::config::SecurityConfig;
 
 use super::health_controller;
+use super::http_observability::HttpObservability;
 use super::municipio::municipio_controller;
 use super::state::ApplicationState;
 use super::unit::unit_controller;
 
 pub fn create_router(state: ApplicationState, security: &SecurityConfig) -> Router {
-    let public_routes = Router::new().route("/health", get(health_controller::health));
+    let health_routes = HttpObservability::apply_healthcheck(
+        Router::new().route("/health", get(health_controller::health)),
+    );
     let authenticated_routes = security.protect_authenticated(
         Router::new()
             .route("/api/v1/municipio", get(municipio_controller::find_all))
@@ -55,17 +56,9 @@ pub fn create_router(state: ApplicationState, security: &SecurityConfig) -> Rout
             )
             .with_state(state),
     );
-    public_routes
-        .merge(authenticated_routes)
-        .merge(administrator_routes)
-        .fallback(StatusCode::NOT_FOUND)
-        .layer(
-            TraceLayer::new_for_http()
-                .make_span_with(
-                    DefaultMakeSpan::new()
-                        .level(Level::INFO)
-                        .include_headers(false),
-                )
-                .on_response(DefaultOnResponse::new().level(Level::INFO)),
-        )
+    health_routes.merge(HttpObservability::apply(
+        authenticated_routes
+            .merge(administrator_routes)
+            .fallback(StatusCode::NOT_FOUND),
+    ))
 }
