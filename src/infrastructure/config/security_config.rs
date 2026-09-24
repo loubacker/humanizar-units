@@ -1,4 +1,3 @@
-use std::env;
 use std::sync::Arc;
 use std::time::Duration;
 
@@ -17,7 +16,6 @@ use super::EnvironmentConfig;
 
 pub type SecurityConfigError = TechnicalError;
 
-const DEFAULT_AUDIENCE: &str = "humanizar-client";
 const DEFAULT_CACHE_TTL_SECONDS: u64 = 300;
 const DEFAULT_REFRESH_INTERVAL_SECONDS: u64 = 10;
 const DEFAULT_CONNECT_TIMEOUT_SECONDS: u64 = 5;
@@ -39,7 +37,7 @@ impl SecuritySettings {
         EnvironmentConfig::load()?;
         let jwks_url = EnvironmentConfig::required("KEYCLOAK_ISSUER")?;
         let issuer = EnvironmentConfig::required("JWT_ISSUER")?;
-        let audience = env::var("JWT_AUDIENCE").unwrap_or_else(|_| DEFAULT_AUDIENCE.to_owned());
+        let audience = EnvironmentConfig::required("JWT_AUDIENCE")?;
         let cache_ttl = EnvironmentConfig::positive_duration_seconds(
             "JWKS_CACHE_TTL_SECONDS",
             DEFAULT_CACHE_TTL_SECONDS,

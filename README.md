@@ -7,6 +7,7 @@
   <img alt="Tokio" src="https://img.shields.io/badge/Tokio-1.53-2C5BB4?style=for-the-badge&logo=rust&logoColor=white" />
   <img alt="PostgreSQL" src="https://img.shields.io/badge/PostgreSQL-316192?style=for-the-badge&logo=postgresql&logoColor=white" />
   <img alt="Docker" src="https://img.shields.io/badge/Docker-2496ED?style=for-the-badge&logo=docker&logoColor=white" />
+  <img alt="Keycloak" src="https://img.shields.io/badge/Keycloak-4D4D4D?style=for-the-badge&logo=keycloak&logoColor=white" />
 </div>
 
 <br/>
@@ -82,28 +83,15 @@ As respostas de sucesso permanecem diretas para compatibilidade com os consumido
 - Respostas `401` usam `AUTHENTICATION_FAILURE` e respostas `403` usam `AUTHORIZATION_FAILURE`.
 - Bearer token, credenciais, senha e conteúdo completo do JWT não são registrados em log.
 
-## ⛓️‍💥 Resiliência e Persistência
-
-### Pool PostgreSQL
-
-Valores padrão:
-
-- Conexões mínimas: `3`.
-- Conexões máximas: `10`.
-- Timeout de aquisição: `30s`.
-- Idle timeout: `300s`.
-- Tempo máximo de vida: `600s`.
-- Transporte local sem TLS (`NoTls`).
-
-O startup falha caso não seja possível inicializar o pool ou criar as conexões mínimas.
+## ⛓️‍💥 Resiliência
 
 ### Retry de leitura
 
 - Uma tentativa inicial e até duas novas tentativas.
-- Backoff exponencial de `100ms` até `1s`, fator `2` e jitter.
-- Timeout total de `30s`, incluindo execução e esperas.
-- Retry somente para falhas transitórias classificadas pelo `PostgresErrorHandler`.
-- Escritas não possuem retry automático para evitar duplicidade ou repetição de efeitos.
+- Backoff exponencial e jitter.
+- Timeout, incluindo execução e esperas.
+- Retry somente para falhas transitórias.
+- Escritas não possuem retry automático.
 
 ### ReasonCode
 
@@ -127,32 +115,6 @@ O bootstrap é executado em etapas ordenadas, e cada etapa registra o destino co
 2. Pool PostgreSQL, com `banco`, `usuario`, tamanhos e timeout de conexão.
 3. Cache JWKS, com `jwks`, `emissor`, `audiencia` e timeouts HTTP.
 4. Listener HTTP, com `host` e `port`.
-
-Quando uma etapa falha, o processo encerra com código `1` e escreve em `stderr` a mensagem principal seguida da cadeia técnica completa:
-
-```text
-Falha ao iniciar humanizar-units: Falha ao inicializar o pool PostgreSQL em postgresql://db:5432/humanizar_units com o usuário postgres
-  causa 1: error connecting to server: Connection refused (os error 111)
-  causa 2: Connection refused (os error 111)
-```
-
-```text
-Falha ao iniciar humanizar-units: Falha ao inicializar o cache JWKS em https://<keycloak-host>/realms/<realm>/protocol/openid-connect/certs
-  causa 1: Falha ao consultar o JWKS em https://<keycloak-host>/realms/<realm>/protocol/openid-connect/certs
-  causa 2: error sending request
-  causa 3: operation timed out
-```
-
-Toda URL registrada em log ou em mensagem de erro passa por sanitização que descarta usuário, senha, query e fragment. A senha do banco, o Bearer token e o conteúdo do JWT nunca são registrados.
-
-### Variáveis de Diagnóstico e Timeout do JWKS
-
-| Variável | Padrão | Efeito |
-|----------|--------|--------|
-| `JWKS_CONNECT_TIMEOUT_SECONDS` | `5` | Tempo máximo para estabelecer a conexão TCP/TLS com o Keycloak. |
-| `JWKS_REQUEST_TIMEOUT_SECONDS` | `10` | Tempo máximo total da requisição JWKS, incluindo a conexão. |
-
-O timeout de conexão não pode superar o timeout de resposta. Sem esses limites, um Keycloak que aceita a conexão e não responde suspenderia o startup indefinidamente.
 
 ## Estrutura do Projeto
 
@@ -199,43 +161,21 @@ O projeto não utiliza `mod.rs`. Os módulos públicos de primeiro nível são o
 
 O serviço não cria tabelas nem executa migrations automaticamente. Antes do startup, o schema deve conter `public.municipio` e `public.units`, com `units.municipio_id` referenciando `municipio.id`.
 
-### Variáveis de Ambiente (`.env`)
-
-O `.env` local é ignorado pelo Git. Para autenticação, configure:
-
-```env
-KEYCLOAK_ISSUER=<url-jwks-completa>
-JWT_ISSUER=<issuer-exato-do-realm>
-JWT_AUDIENCE=humanizar-client
-```
-
-`KEYCLOAK_ISSUER` recebe o endpoint completo de certificados, incluindo
-`/protocol/openid-connect/certs`. `JWT_ISSUER` recebe o issuer exato do realm e
-`JWT_AUDIENCE` permanece genérico como `humanizar-client`.
-
-`DB_URL` não aceita usuário nem senha embutidos: as credenciais chegam apenas por `DB_USERNAME` e `DB_PASSWORD`.
-
 ### Execução local
-
-```bash
+```b
 cargo run
 ```
-
 Porta padrão: `9095`
 Health check: `http://localhost:9095/health`
 
 ### Quality gates
-
 ```bash
 cargo fmt --check
 cargo clippy --all-targets -- -D warnings
 cargo test
 cargo check
 ```
-
-O teste integrado de persistência usa o PostgreSQL configurado pelas variáveis de ambiente e remove os registros criados ao final.
-
-## Docker
+## 🐳 Docker
 
 O Dockerfile usa build multi-stage:
 
