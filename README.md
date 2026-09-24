@@ -149,8 +149,6 @@ tests/
 `-- support/
 ```
 
-O projeto não utiliza `mod.rs`. Os módulos públicos de primeiro nível são organizados em `lib.rs`, e os arquivos de produção não contêm módulos de teste.
-
 ## Como Executar Localmente
 
 ### Pré-requisitos
