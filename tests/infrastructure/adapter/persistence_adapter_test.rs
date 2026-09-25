@@ -5,6 +5,7 @@ use std::io::Error as IoError;
 use std::sync::Arc;
 use std::time::{SystemTime, UNIX_EPOCH};
 
+use humanizar_units::domain::model::enums::ReasonCode;
 use humanizar_units::domain::model::{Municipio, Unit};
 use humanizar_units::domain::port::{MunicipioPort, UnitPort};
 use humanizar_units::infrastructure::adapter::{MunicipioAdapter, UnitAdapter};
@@ -27,7 +28,7 @@ async fn adapters_execute_the_complete_crud_contract_on_postgresql() -> TestResu
     ));
     let suffix = unique_suffix();
     let codigo_ibge = format!("{suffix:07}");
-    let cnpj = format!("99{suffix:07}000190");
+    let cnpj = format!("9{suffix:07}000190");
 
     cleanup(&database, &codigo_ibge, &cnpj).await?;
     let scenario = execute_scenario(
@@ -42,6 +43,92 @@ async fn adapters_execute_the_complete_crud_contract_on_postgresql() -> TestResu
     scenario?;
     cleanup_result?;
     Ok(())
+}
+
+#[tokio::test]
+async fn unit_insert_persists_all_fields_and_database_timestamps() -> TestResult {
+    let database = DatabaseConfig::from_env().await?;
+    let retry_executor = RetryConfig::from_env()?.executor();
+    let municipio_port: Arc<dyn MunicipioPort> = Arc::new(MunicipioAdapter::new(
+        MunicipioRepository::new(database.clone()),
+        retry_executor.clone(),
+    ));
+    let unit_port: Arc<dyn UnitPort> = Arc::new(UnitAdapter::new(
+        UnitRepository::new(database.clone()),
+        retry_executor,
+    ));
+    let suffix = unique_suffix();
+    let codigo_ibge = format!("{suffix:07}");
+    let cnpj = format!("9{suffix:07}000190");
+
+    let scenario = async {
+        let municipio = municipio_port
+            .save(Municipio::new(&codigo_ibge, "Municipio Insert", "SP"))
+            .await?;
+        let municipio_id = required_id(municipio.id(), "municipio salvo deve possuir ID")?;
+        let unit = unit_port
+            .save(Unit::new(
+                municipio_id,
+                "Unidade Insert",
+                "Humanizar Insert Ltda",
+                "Rua de Teste",
+                "100",
+                Some("Sala 2".to_owned()),
+                "Centro",
+                "01001000",
+                &cnpj,
+            ))
+            .await?;
+        let unit_id = required_id(unit.id(), "unidade salva deve possuir ID")?;
+        ensure(
+            unit.created_at().is_some(),
+            "insert deve preencher created_at",
+        )?;
+        ensure(
+            unit.updated_at().is_some(),
+            "insert deve preencher updated_at",
+        )?;
+
+        let found = unit_port
+            .find_by_id_and_municipio_id(unit_id, municipio_id)
+            .await?;
+        ensure(found == Some(unit), "insert deve persistir todos os campos")?;
+        Ok::<(), Box<dyn Error + Send + Sync>>(())
+    }
+    .await;
+    let cleanup_result = cleanup(&database, &codigo_ibge, &cnpj).await;
+
+    scenario?;
+    cleanup_result
+}
+
+#[tokio::test]
+async fn database_rejection_preserves_persistence_reason_code() -> TestResult {
+    let database = DatabaseConfig::from_env().await?;
+    let unit_port: Arc<dyn UnitPort> = Arc::new(UnitAdapter::new(
+        UnitRepository::new(database),
+        RetryConfig::from_env()?.executor(),
+    ));
+    let unit = Unit::new(
+        uuid::Uuid::new_v4(),
+        "Unidade Sem Municipio",
+        "Humanizar Teste Ltda",
+        "Rua de Teste",
+        "100",
+        None,
+        "Centro",
+        "01001000",
+        "99123456789012",
+    );
+
+    let error = unit_port
+        .save(unit)
+        .await
+        .expect_err("a FK deve rejeitar unidade sem municipio");
+    ensure(
+        error.reason_code() == ReasonCode::PersistenceFailure,
+        "falha real do banco deve manter PERSISTENCE_FAILURE",
+    )
 }
 
 async fn execute_scenario(
